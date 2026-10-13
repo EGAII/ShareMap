@@ -27,6 +27,8 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
     can see, and move up automatically when someone leaves.
   - Bring a guest, cancel a single date, edit or stop a series, add to Google Calendar.
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).
+- **Add to home screen**: a button in the top bar (and on the sign-in screen) shows how to add ShareMap to an
+  iPhone or Android home screen; it then opens like an app with its own icon.
 
 ## Setup (about 15 minutes)
 
@@ -54,14 +56,21 @@ The anon key is designed to be public; the database's Row Level Security protect
 2. Go to **Repo → Settings → Pages**, set *Source: Deploy from a branch*, *Branch: main / (root)*, then Save.
 3. After a minute your site is live at `https://<you>.github.io/sharemap/`.
 
-### 4. Point Supabase sign-in at your site
+### 4. Sign-in settings in Supabase
 
-In Supabase, go to **Authentication → URL Configuration**:
-- **Site URL**: `https://<you>.github.io/sharemap/`
-- **Redirect URLs**: add the same URL (and `http://localhost:8765/` for local testing)
+Members sign in with email + password.
 
-Optional: to get a 6-digit code as well as the link (handy when the link opens in a different browser on a phone),
-go to **Authentication → Email Templates → Magic Link** and add `{{ .Token }}` to the template.
+- **Authentication → URL Configuration**: set **Site URL** to `https://<you>.github.io/sharemap/` and add the
+  same URL to **Redirect URLs** (plus `http://localhost:8765/` for local testing). Password-reset links use it.
+- **Authentication → Sign In / Providers → Email**:
+  - **Confirm email**: turn it **off** if you don't want new members to confirm their address before using the
+    site; leave it on if you do (then they need the confirmation email first).
+  - **Minimum password length**: 8 matches the site.
+- **Forgot password** sends an email, so it needs working email (custom SMTP, e.g. a Gmail app password, under
+  **Authentication → Emails → SMTP Settings**). The **Reset Password** template is the one used.
+
+People who used the site before passwords existed have no password yet: they can set one under
+**Members → Password** while still signed in, or use **Forgot password?** on the sign-in screen.
 
 ### 5. Start using it
 

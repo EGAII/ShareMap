@@ -80,6 +80,7 @@ function applyLanguage() {
   document.title = title;
   $$('.app-title').forEach((el) => { el.textContent = title; });
   $('#setup-body').innerHTML = t('setup.body');
+  setAuthMode(authMode);
   if (state.profile) renderOrgSelect();
 }
 document.addEventListener('change', (e) => {
@@ -128,6 +129,8 @@ const state = {
   nextSig: '',
   nextAt: 0,
 };
+let authMode = 'in';   // sign-in form: 'in' | 'up' | 'reset'
+const MIN_PASSWORD = 8;
 
 applyLanguage();
 
@@ -141,41 +144,186 @@ if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes('YOUR_') || !window.supabase)
 const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 // ---------------------------------------------------------------------
-// Auth
+// Auth: email + password (sign in / create account / reset)
 // ---------------------------------------------------------------------
-let authEmail = '';
+function setAuthMode(mode) {
+  authMode = mode;
+  $$('#auth-tabs button').forEach((b) => {
+    const on = b.dataset.auth === mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  $('#auth-tabs').hidden = mode === 'reset';
+  $('#auth-form [data-up]').hidden = mode !== 'up';
+  $('#auth-form [data-pw]').hidden = mode === 'reset';
+  const pw = $('#auth-password');
+  pw.required = mode !== 'reset';
+  pw.autocomplete = mode === 'up' ? 'new-password' : 'current-password';
+  if (mode === 'up') pw.minLength = MIN_PASSWORD; else pw.removeAttribute('minlength');
+  pw.placeholder = mode === 'up' ? t('auth.short') : '';
+  $('#auth-submit').textContent = t(mode === 'in' ? 'auth.signIn' : mode === 'up' ? 'auth.signUp' : 'auth.sendReset');
+  $('#auth-forgot').textContent = t(mode === 'reset' ? 'auth.back' : 'auth.forgot');
+  $('#auth-forgot').hidden = mode === 'up';
+  authNote('');
+}
+function authNote(msg, kind = 'error') {
+  const el = $('#auth-note');
+  el.textContent = msg;
+  el.className = `form-note ${kind}`;
+  el.hidden = !msg;
+}
+// Supabase's messages are English-only; map the common ones
+function authMessage(error) {
+  const byCode = {
+    invalid_credentials: 'auth.badLogin', user_already_exists: 'auth.exists', email_exists: 'auth.exists',
+    weak_password: 'auth.weak', email_not_confirmed: 'auth.notConfirmed',
+  };
+  let key = byCode[error?.code];
+  if (!key && /invalid login/i.test(error?.message)) key = 'auth.badLogin';
+  if (!key && /already registered/i.test(error?.message)) key = 'auth.exists';
+  if (!key && /at least \d+ characters/i.test(error?.message)) key = 'auth.short';
+  return key ? t(key) : (error?.message || String(error));
+}
+
+$('#auth-tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-auth]');
+  if (b) setAuthMode(b.dataset.auth);
+});
+$('#auth-forgot').addEventListener('click', () => setAuthMode(authMode === 'reset' ? 'in' : 'reset'));
+
+// Show / hide password (any .pw field)
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.pw-toggle');
+  if (!b) return;
+  const input = b.parentElement.querySelector('input');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  b.querySelector('use').setAttribute('href', show ? '#i-eye-off' : '#i-eye');
+  b.title = t(show ? 'auth.hide' : 'auth.show');
+  b.setAttribute('aria-label', b.title);
+});
+
 $('#auth-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  authEmail = $('#auth-email').value.trim().toLowerCase();
-  const btn = e.submitter; btn.disabled = true;
-  const { error } = await sb.auth.signInWithOtp({
-    email: authEmail,
-    options: { emailRedirectTo: location.origin + location.pathname },
-  });
-  btn.disabled = false;
-  if (error) return toast(error.message, true);
-  $('#otp-form').hidden = false;
-  toast(t('auth.sent'));
-});
-$('#otp-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const { error } = await sb.auth.verifyOtp({ email: authEmail, token: $('#otp-code').value.trim(), type: 'email' });
-  if (error) toast(error.message, true);
+  const email = $('#auth-email').value.trim().toLowerCase();
+  const password = $('#auth-password').value;
+  const btn = $('#auth-submit');
+  btn.disabled = true;
+  authNote('');
+  try {
+    if (authMode === 'in') {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) authNote(authMessage(error));
+    } else if (authMode === 'up') {
+      if (password.length < MIN_PASSWORD) return authNote(t('auth.short'));
+      const name = $('#auth-name').value.trim();
+      const { data, error } = await sb.auth.signUp({
+        email, password,
+        options: { data: name ? { display_name: name } : {}, emailRedirectTo: location.origin + location.pathname },
+      });
+      if (error) return authNote(authMessage(error));
+      // With "Confirm email" on, an existing address comes back as a user without identities
+      if (data.user && Array.isArray(data.user.identities) && !data.user.identities.length) return authNote(t('auth.exists'));
+      if (!data.session) { setAuthMode('in'); authNote(t('auth.confirmSent'), 'info'); }
+    } else {
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      if (error) return authNote(authMessage(error));
+      setAuthMode('in');
+      authNote(t('auth.resetSent'), 'info');
+    }
+  } finally {
+    btn.disabled = false;
+  }
 });
 $('#signout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
 
+// Opened from a "reset password" email: ask for the new password
+function newPasswordModal() {
+  const body = openModal(`
+    <div class="modal-head"><h2>${esc(t('auth.setNew'))}</h2>${closeBtn()}</div>
+    <form id="recover-form" class="stack">
+      <div class="pw">
+        <input type="password" name="password" required minlength="${MIN_PASSWORD}" autocomplete="new-password" placeholder="${esc(t('auth.short'))}">
+        <button type="button" class="ghost icon pw-toggle" title="${esc(t('auth.show'))}" aria-label="${esc(t('auth.show'))}">${ic('eye')}</button>
+      </div>
+      <p class="form-note error" role="alert" hidden></p>
+      <button class="primary">${esc(t('save'))}</button>
+    </form>`);
+  const f = $('#recover-form', body);
+  f.password.focus();
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const note = $('.form-note', f);
+    const btn = $('button.primary', f);
+    btn.disabled = true;
+    const { error } = await sb.auth.updateUser({ password: f.password.value });
+    btn.disabled = false;
+    if (error) { note.textContent = authMessage(error); note.hidden = false; return; }
+    closeModal();
+    toast(t('auth.pwSaved'));
+  });
+}
+
+// ---------------------------------------------------------------------
+// "Add to home screen" guide (iPhone: Safari share sheet; Android: Chrome menu
+// or the browser's own install prompt when it offers one)
+// ---------------------------------------------------------------------
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+window.addEventListener('appinstalled', () => { installPrompt = null; refreshInstallButtons(); });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function refreshInstallButtons() {
+  $$('.install-btn').forEach((b) => { b.hidden = isStandalone(); });
+}
+function phoneKind() {
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return 'android';
+  if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'ios';
+}
+function installGuide(kind = phoneKind()) {
+  const steps = {
+    ios: [['compass', 'install.ios1'], ['share-ios', 'install.ios2'], ['plus-square', 'install.ios3'], ['check', 'install.ios4']],
+    android: [['compass', 'install.and1'], ['dots', 'install.and2'], ['plus-square', 'install.and3'], ['check', 'install.and4']],
+  };
+  const tab = (k) => `<button type="button" role="tab" data-kind="${k}" class="${k === kind ? 'on' : ''}" aria-selected="${k === kind}">${esc(t('install.' + k))}</button>`;
+  const body = openModal(`
+    <div class="modal-head"><h2>${esc(t('install.title'))}</h2>${closeBtn()}</div>
+    ${installPrompt ? `<button class="primary install-now">${ic('phone-add')}${esc(t('install.now'))}</button>` : ''}
+    <div class="seg" role="tablist">${tab('ios')}${tab('android')}</div>
+    <ol class="steps">${steps[kind].map(([icon, key], i) => `
+      <li><span class="step-n">${i + 1}</span><span class="step-ic">${ic(icon)}</span><span>${esc(t(key))}</span></li>`).join('')}
+    </ol>
+    ${kind === 'ios' ? `<p class="muted small steps-note">${esc(t('install.iosNote'))}</p>` : ''}`);
+  body.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => installGuide(b.dataset.kind)));
+  $('.install-now', body)?.addEventListener('click', async () => {
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => {});
+    installPrompt = null;
+    closeModal();
+  });
+}
+document.addEventListener('click', (e) => { if (e.target.closest('.install-btn')) installGuide(); });
+refreshInstallButtons();
+
 let booted = false;
-sb.auth.onAuthStateChange((_event, session) => {
+sb.auth.onAuthStateChange((event, session) => {
   if (session?.user && !booted) { booted = true; setTimeout(() => boot(session.user), 0); }
+  if (event === 'PASSWORD_RECOVERY') setTimeout(newPasswordModal, 400);
   if (!session) { booted = false; $('#topbar').hidden = true; showOnly('view-auth'); }
 });
 
 async function boot(user) {
   state.user = user;
+  const emailName = user.email.split('@')[0];
+  const chosenName = String(user.user_metadata?.display_name || '').trim();
   let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
   if (!profile) {
     profile = check(await sb.from('profiles')
-      .insert({ id: user.id, display_name: user.email.split('@')[0] }).select().single());
+      .insert({ id: user.id, display_name: chosenName || emailName }).select().single());
+  } else if (chosenName && profile.display_name === emailName) {
+    // Name typed at sign-up (the database trigger only knows the email)
+    profile = check(await sb.from('profiles').update({ display_name: chosenName }).eq('id', user.id).select().single());
   }
   state.profile = profile;
   $('#topbar').hidden = false;
@@ -839,6 +987,17 @@ $('#org-delete').addEventListener('click', async () => {
   state.orgId = null;
   await loadOrgs();
   enterOrg(state.orgId);
+});
+$('#password-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('#new-password');
+  const btn = $('button.primary', e.target);
+  btn.disabled = true;
+  const { error } = await sb.auth.updateUser({ password: input.value });
+  btn.disabled = false;
+  if (error) return toast(authMessage(error), true);
+  input.value = '';
+  toast(t('auth.pwSaved'));
 });
 $('#profile-form').addEventListener('submit', async (e) => {
   e.preventDefault();
