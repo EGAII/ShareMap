@@ -1247,24 +1247,51 @@ function countHtml(ev) {
   return `<span>${ic('users', 'sm')}${cap}</span>${st.waitlist.length
     ? `<span>${ic('hourglass', 'sm')}${esc(t('count.waiting', { n: st.waitlist.length }))}</span>` : ''}`;
 }
+// Right side of an upcoming row: my status, or a one-tap Join button
+function upAction(ev) {
+  const st = eventStats(ev);
+  if (!ev.cancelled && st.mine?.status === 'confirmed') return `<span class="badge ok">${ic('check', 'sm')}${esc(t('badge.joined'))}</span>`;
+  if (ev.cancelled || st.mine) return myBadge(ev);
+  if (!canJoin()) return '';
+  return `<button class="small ${st.full ? '' : 'primary'}" data-join="${ev.id}">${esc(t(st.full ? 'ev.joinWait' : 'ev.join'))}</button>`;
+}
+function spotsHtml(ev) {
+  if (ev.cancelled || ev.capacity == null) return '';
+  const left = ev.capacity - eventStats(ev).confirmed.length;
+  return left > 0 ? `<span class="spots">${esc(t('up.left', { n: left }))}</span>`
+    : `<span class="spots full">${esc(t('up.full'))}</span>`;
+}
 function upItem(ev) {
   const d = new Date(ev.starts_at);
   const place = state.places.find((p) => p.id === ev.place_id);
   return `<div class="up-item" data-ev="${ev.id}">
     <div class="up-date">${esc(fmtDate(d))}<div class="muted small">${esc(fmtTime(d))}</div></div>
     <div class="up-main"><b>${esc(ev.title)}</b>
-      <div class="up-meta"><span>${ic('pin', 'sm')}${esc(place?.name || '')}</span>${countHtml(ev)}</div></div>
-    ${myBadge(ev)}
+      <div class="up-meta"><span>${ic('pin', 'sm')}${esc(place?.name || '')}</span>${countHtml(ev)}${spotsHtml(ev)}</div></div>
+    <div class="up-act">${upAction(ev)}${ic('right', 'sm chev')}</div>
   </div>`;
 }
 function renderUpcoming() {
   const now = new Date();
   const until = addDays(now, 30);
   const list = state.events.filter((ev) => new Date(ev.ends_at) >= now && new Date(ev.starts_at) <= until);
+  $('.up-guide').hidden = !list.length;
   $('#upcoming').innerHTML = list.length ? list.map(upItem).join('')
     : `<div class="empty compact">${ic('calendar')}<span>${esc(t('cal.noUpcoming'))}</span></div>`;
 }
-$('#upcoming').addEventListener('click', (e) => {
+$('#upcoming').addEventListener('click', async (e) => {
+  const join = e.target.closest('[data-join]');
+  if (join) {
+    const ev = state.events.find((x) => x.id === Number(join.dataset.join));
+    const full = eventStats(ev).full;
+    join.disabled = true;
+    try {
+      check(await sb.from('event_participants').insert({ event_id: ev.id }));
+      toast(t(full ? 'ev.addedWait' : 'ev.joined'));
+      await renderCalendar();
+    } catch (err) { console.error(err); join.disabled = false; }
+    return;
+  }
   const it = e.target.closest('[data-ev]');
   if (it) eventDetail(Number(it.dataset.ev));
 });

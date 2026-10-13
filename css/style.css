@@ -583,7 +583,8 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
   .cal-day .chip .t { display: none; }
   .row { flex-direction: column; gap: 0; }
   .up-item { grid-template-columns: 4.6rem minmax(0, 1fr); gap: .75rem; padding: .75rem .9rem; }
-  .up-item .badge { grid-column: 2; justify-self: start; }
+  .up-item .up-act { grid-column: 2; justify-self: start; }
+  .up-item .chev { display: none; }
   .card { padding: 1.2rem 1.1rem 1.3rem; }
   .card.narrow { padding: 1.5rem 1.25rem 1.75rem; }
   #modal-body { padding: 1.2rem 1.1rem 1.3rem; }
@@ -596,3 +597,14 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
 .admin-list li { align-items: flex-start; }
 .admin-list .perms { margin-left: 0; flex: 1 1 260px; }
 .btn-row.tight { margin-top: 0; gap: .4rem; }
+
+/* Upcoming: how-to-join guide and row actions */
+.up-guide { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: -.3rem 0 .9rem; padding: .75rem 1rem;
+            background: var(--accent-soft); border-radius: var(--r-md); font-size: .86rem; color: var(--text); }
+.up-guide li { display: flex; align-items: flex-start; gap: .45rem; flex: 1 1 220px; }
+.up-guide .n { flex: none; display: inline-grid; place-items: center; width: 1.3rem; height: 1.3rem; border-radius: 50%;
+               background: var(--accent); color: var(--accent-text); font-size: .75rem; font-weight: 600; margin-top: .05rem; }
+.up-act { display: flex; align-items: center; gap: .4rem; }
+.up-act .chev { color: var(--faint); }
+.up-meta .spots { color: var(--accent-ink); font-weight: 500; }
+.up-meta .spots.full { color: var(--warn); }
