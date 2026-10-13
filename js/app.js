@@ -60,7 +60,11 @@ function toast(msg, isError = false) {
   toast._t = setTimeout(() => { el.hidden = true; }, isError ? 5000 : 2500);
 }
 function check({ error, data }) {
-  if (error) { toast(error.message, true); throw error; }
+  if (error) {
+    const limit = /PLACE_DAILY_LIMIT (\d+)/.exec(error.message || '');
+    toast(limit ? t('place.limit', { n: Number(limit[1]) }) : error.message, true);
+    throw error;
+  }
   return data;
 }
 
@@ -124,6 +128,7 @@ const state = {
   parts: new Map(),     // event_id -> participant rows (ordered)
   series: new Map(),    // series_id -> series row
   mySubs: new Set(),    // series ids I auto-join
+  isOrganizer: false,   // I have created an event in this organization
   next: new Map(),      // place_id -> next upcoming event (for place covers)
   nextCount: new Map(), // place_id -> number of upcoming events
   nextSig: '',
@@ -350,6 +355,22 @@ async function loadOrgs() {
 }
 
 const currentOrg = () => state.orgs.find((o) => o.id === state.orgId);
+const isAdmin = () => currentOrg()?.role === 'owner';
+const myMember = () => state.members.find((m) => m.user_id === state.user.id);
+const canCreate = () => myMember()?.can_create !== false;
+const canJoin = () => myMember()?.can_join !== false;
+const memberName = (id) => state.members.find((m) => m.user_id === id)?.profiles?.display_name || '—';
+const canEditPlace = (p) => p.created_by === state.user.id || isAdmin();
+// Places I may still add today (Japan time, as the database counts); null = no limit
+const tokyoDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' });
+function placesLeftToday() {
+  if (isAdmin()) return null;
+  const today = tokyoDay(Date.now());
+  const used = state.places.filter((p) => p.created_by === state.user.id && tokyoDay(p.created_at) === today).length;
+  return Math.max(0, (state.isOrganizer ? 2 : 1) - used);
+}
+const fmtStamp = (s) => new Date(s).toLocaleString(i18n.locale,
+  { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 // Show the chosen organization, or the create/join screen when there is none.
 async function enterOrg(id) {
@@ -434,15 +455,17 @@ async function createOrg(name) {
 
 async function loadBase() {
   const org = state.orgId;
-  const [cats, places, members] = await Promise.all([
+  const [cats, places, members, mySeries] = await Promise.all([
     sb.from('categories').select('*').eq('org_id', org).order('sort_order').order('name'),
     sb.from('places').select('*').eq('org_id', org).order('name'),
-    sb.from('org_members').select('user_id, role, joined_at, profiles(display_name)').eq('org_id', org).order('joined_at'),
+    sb.from('org_members').select('user_id, role, joined_at, can_create, can_join, profiles(display_name)').eq('org_id', org).order('joined_at'),
+    sb.from('event_series').select('id', { count: 'exact', head: true }).eq('org_id', org).eq('created_by', state.user.id),
   ]);
   if (org !== state.orgId) return;   // switched organization meanwhile
   state.categories = check(cats);
   state.places = check(places);
   state.members = check(members);
+  state.isOrganizer = (mySeries.count || 0) > 0;
   await loadNext().catch(() => {});
 }
 // Place covers show the next event; refetch after any change to events
@@ -457,6 +480,9 @@ $('#tabs').addEventListener('click', (e) => {
 });
 function switchView(v) {
   if (!['places', 'calendar', 'categories', 'org'].includes(v)) v = 'places';
+  // Only the owner manages categories; others don't see the tab
+  $('#tabs button[data-view="categories"]').hidden = !isAdmin();
+  if (v === 'categories' && !isAdmin()) v = 'places';
   state.view = v;
   store.set('fsm.view', v);
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
@@ -742,7 +768,7 @@ function placeCard(p) {
       ${p.note ? `<span class="note">${esc(p.note)}</span>` : ''}
       <span class="actions">
         <button class="small" data-act="event" data-id="${p.id}">${ic('calendar', 'sm')}${esc(t('places.event'))}</button>
-        <button class="small" data-act="edit" data-id="${p.id}">${ic('pencil', 'sm')}${esc(t('edit'))}</button>
+        ${canEditPlace(p) ? `<button class="small" data-act="edit" data-id="${p.id}">${ic('pencil', 'sm')}${esc(t('edit'))}</button>` : ''}
       </span>
     </article>`;
 }
@@ -786,10 +812,13 @@ $('#place-list').addEventListener('click', (e) => {
 });
 
 function placeForm(place = null) {
+  const left = place ? null : placesLeftToday();
+  if (left === 0) return toast(t('place.limit', { n: state.isOrganizer ? 2 : 1 }), true);
   const preCat = place ? place.category_id
     : (/^\d+$/.test(String(state.selectedCat)) ? Number(state.selectedCat) : null);
   const body = openModal(`
     <div class="modal-head"><h2>${esc(t(place ? 'place.editTitle' : 'place.addTitle'))}</h2>${closeBtn()}</div>
+    ${left != null ? `<p class="muted small">${esc(t('place.quota', { n: left }))}</p>` : ''}
     <form id="place-form">
       <div class="field">
         <label>${esc(t('place.link'))}</label>
@@ -929,8 +958,12 @@ function renderOrgPage() {
   $('#member-list').innerHTML = state.members.map((m) => {
     const me = m.user_id === state.user.id;
     const name = m.profiles?.display_name || '?';
+    const limits = (m.can_create ? '' : `<span class="badge wait">${esc(t('perm.noCreate'))}</span>`)
+      + (m.can_join ? '' : `<span class="badge wait">${esc(t('perm.noJoin'))}</span>`);
+    const perm = (k, label) => `<label class="checkline small"><input type="checkbox" data-perm="${k}" data-user="${m.user_id}" ${m[k] ? 'checked' : ''}> ${esc(t(label))}</label>`;
     return `<li><span class="who-line">${avatar(name)}<span>${esc(name)}${me ? ` <span class="muted">${esc(t('fam.you'))}</span>` : ''}${
-        m.role === 'owner' ? `<span class="role">${esc(t('org.owner'))}</span>` : ''}</span></span>
+        m.role === 'owner' ? `<span class="role">${esc(t('org.owner'))}</span>` : ''}${owner ? '' : limits}</span></span>
+      ${owner && m.role !== 'owner' ? `<span class="perms">${perm('can_create', 'perm.create')}${perm('can_join', 'perm.join')}</span>` : ''}
       ${owner && !me ? `<button class="small danger" data-remove-member="${m.user_id}">${esc(t('remove'))}</button>` : ''}</li>`;
   }).join('');
   $('#my-orgs').innerHTML = state.orgs.map((o) => `
@@ -962,6 +995,24 @@ $('#org-add').addEventListener('click', () => {
 $('#my-orgs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-switch-org]');
   if (b) enterOrg(Number(b.dataset.switchOrg));
+});
+$('#member-list').addEventListener('change', async (e) => {
+  const box = e.target.closest('[data-perm]');
+  if (!box) return;
+  const m = state.members.find((x) => x.user_id === box.dataset.user);
+  const next = { can_create: m.can_create, can_join: m.can_join, [box.dataset.perm]: box.checked };
+  box.disabled = true;
+  try {
+    check(await sb.rpc('set_member_permissions',
+      { p_org: state.orgId, p_user: m.user_id, p_can_create: next.can_create, p_can_join: next.can_join }));
+    Object.assign(m, next);
+    toast(t('perm.saved'));
+  } catch (err) {
+    box.checked = !box.checked;
+    console.error(err);
+  } finally {
+    box.disabled = false;
+  }
 });
 $('#member-list').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-remove-member]');
@@ -1086,6 +1137,7 @@ $('#cal-prev').addEventListener('click', () => { state.month = new Date(state.mo
 $('#cal-next').addEventListener('click', () => { state.month = new Date(state.month.getFullYear(), state.month.getMonth() + 1, 1); renderCalendar(); });
 $('#cal-today').addEventListener('click', () => { state.month = startOfMonth(new Date()); renderCalendar(); });
 $('#add-event').addEventListener('click', () => eventForm());
+$('#cal-history').addEventListener('click', () => orgHistory());
 
 async function renderCalendar() {
   $('#cal-title').textContent = state.month.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long' });
@@ -1176,6 +1228,7 @@ $('#upcoming').addEventListener('click', (e) => {
 // Event form (create a one-off or repeating event)
 // ---------------------------------------------------------------------
 function eventForm({ placeId = null, date = null } = {}) {
+  if (!canCreate()) return toast(t('ban.noCreate'), true);
   if (!state.places.length) return toast(t('ev.needPlace'), true);
   const d = date || dateKey(new Date());
   const place = state.places.find((p) => p.id === placeId);
@@ -1267,6 +1320,7 @@ function eventForm({ placeId = null, date = null } = {}) {
     try {
       const series = check(await sb.from('event_series').insert(row).select().single());
       if (f.autojoin.checked) check(await sb.from('series_subscribers').insert({ series_id: series.id }));
+      state.isOrganizer = true;
       eventsChanged();
       closeModal();
       toast(t(freq === 'none' ? 'ev.created' : 'ev.createdRepeat'));
@@ -1312,13 +1366,15 @@ function eventDetail(id) {
   const start = new Date(ev.starts_at);
   const end = new Date(ev.ends_at);
   const L = (k, v) => esc(t(k, v));
-  const canRemove = (p) => p.user_id === state.user.id || isOwner;
+  const canRemove = (p) => p.user_id === state.user.id || isOwner || isAdmin();
   const li = (p, i) => `<li><span class="pos">${i + 1}.</span><span class="who">${personLabel(p)}</span>
       ${canRemove(p) && !past ? `<button class="ghost icon" data-remove="${p.id}" title="${L('remove')}" aria-label="${L('remove')}">${ic('x', 'sm')}</button>` : ''}</li>`;
 
   let joinBtn = '';
   if (!ev.cancelled && !past) {
-    joinBtn = st.mine
+    joinBtn = !st.mine && !canJoin()
+      ? `<p class="muted small">${L('ban.noJoin')}</p>`
+      : st.mine
       ? `<button id="ev-leave">${L(st.mine.status === 'waitlist' ? 'ev.leaveWait' : 'ev.leave')}</button>`
       : `<button class="primary" id="ev-join">${L(st.full ? 'ev.joinWait' : 'ev.join')}</button>`;
   }
@@ -1334,6 +1390,7 @@ function eventDetail(id) {
       <dt>${L('ev.repeatLbl')}</dt><dd>${esc(repeatText(s))}</dd>
       <dt>${L('ev.limitLbl')}</dt><dd>${ev.capacity != null ? L('ev.peopleN', { n: ev.capacity }) : L('ev.noLimit')}</dd>
       ${ev.description ? `<dt>${L('ev.details')}</dt><dd class="pre">${esc(ev.description)}</dd>` : ''}
+      ${s ? `<dt>${L('ev.createdAt')}</dt><dd>${L('ev.createdBy', { time: fmtStamp(s.created_at), name: memberName(s.created_by) })}</dd>` : ''}
     </dl>
 
     <div class="section-title">${ic('users', 'sm')}${L('ev.going')} <span class="count">${st.confirmed.length}${ev.capacity != null ? ` / ${ev.capacity}` : ''}</span></div>
@@ -1343,9 +1400,10 @@ function eventDetail(id) {
 
     <div class="btn-row">
       ${joinBtn}
-      ${!ev.cancelled && !past ? `<button id="ev-guest">${ic('user-plus')}${L('ev.guest')}</button>` : ''}
-      ${repeating && s.active ? `<button id="ev-sub" aria-pressed="${subscribed}">${ic(subscribed ? 'check' : 'repeat')}${L(subscribed ? 'ev.autoOn' : 'ev.autoOff')}</button>` : ''}
+      ${!ev.cancelled && !past && canJoin() ? `<button id="ev-guest">${ic('user-plus')}${L('ev.guest')}</button>` : ''}
+      ${repeating && s.active && (subscribed || canJoin()) ? `<button id="ev-sub" aria-pressed="${subscribed}">${ic(subscribed ? 'check' : 'repeat')}${L(subscribed ? 'ev.autoOn' : 'ev.autoOff')}</button>` : ''}
       <button class="ghost" id="ev-gcal">${ic('calendar')}${L('ev.gcal')}</button>
+      <button class="ghost" id="ev-history">${ic('history')}${L('log.btn')}</button>
     </div>
     <form class="guest-form" id="guest-form" hidden>
       <input name="guest" required maxlength="40" placeholder="${L('ev.guestPrompt')}" autocomplete="off">
@@ -1382,6 +1440,7 @@ function eventDetail(id) {
     gf.hidden = !gf.hidden;
     if (!gf.hidden) gf.guest.focus();
   });
+  $('#ev-history', body).addEventListener('click', () => eventHistory(ev));
   $('#guest-form', body).addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = e.target.guest.value.trim();
@@ -1420,6 +1479,81 @@ function eventDetail(id) {
     check(await sb.from('event_participants').delete().eq('id', Number(b.dataset.remove)));
     await refresh();
   }));
+}
+
+// ---------------------------------------------------------------------
+// History (append-only event_log, written by the database)
+// ---------------------------------------------------------------------
+function logChange(field, [from, to]) {
+  if (field === 'active') return t(to ? 'log.resumed' : 'log.stopped');
+  const label = { title: 'ev.title', description: 'ev.details', capacity: 'ev.limitLbl', until_date: 'ev.until' }[field];
+  const val = (v) => (v == null || v === '' ? (field === 'capacity' ? t('ev.noLimit') : '—')
+    : field === 'until_date' ? fmtYmd(v) : String(v));
+  return `${t(label)}: ${val(from)} → ${val(to)}`;
+}
+
+function logText(r) {
+  const actor = r.actor_name || t('log.system');
+  const who = r.target_name || '—';
+  const guest = r.details?.guest_name;
+  switch (r.action) {
+    case 'created': return t('log.created', { actor });
+    case 'edited': return t('log.edited', { actor });
+    case 'deleted': return t('log.deleted', { actor }) + (r.details?.place_deleted ? ' ' + t('log.placeDeleted') : '');
+    case 'cancelled': return t('log.cancelled', { actor });
+    case 'restored': return t('log.restored', { actor });
+    case 'date_deleted': return t('log.dateDeleted', { actor });
+    case 'joined':
+      if (guest) return t('log.guestAdded', { who, guest });
+      return t(r.actor_id === r.target_id ? 'log.joined' : 'log.autoJoined', { who });
+    case 'left': return guest ? t('log.guestLeft', { who, guest }) : t('log.left', { who });
+    case 'removed': return t('log.removed', { actor, who: guest ? `${guest} ${t('ev.guestOf', { name: who })}` : who });
+    default: return r.action;
+  }
+}
+
+function logList(rows, withEvent) {
+  if (!rows.length) return `<p class="muted">${esc(t('log.empty'))}</p>`;
+  return `<ul class="log">${rows.map((r) => {
+    const changes = r.action === 'edited' ? Object.entries(r.details || {}).map(([k, v]) => logChange(k, v)) : [];
+    const what = [withEvent && r.title, r.starts_at && `${fmtDate(new Date(r.starts_at))} ${fmtTime(new Date(r.starts_at))}`]
+      .filter(Boolean).join(' · ');
+    return `<li class="${['created', 'edited', 'deleted', 'cancelled', 'restored', 'date_deleted'].includes(r.action) ? 'org' : ''}">
+      <time datetime="${esc(r.created_at)}">${esc(fmtStamp(r.created_at))}</time>
+      <div>${what ? `<div class="muted small">${esc(what)}</div>` : ''}${esc(logText(r))}
+        ${changes.length ? `<ul class="changes">${changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}</div></li>`;
+  }).join('')}</ul>`;
+}
+
+async function eventHistory(ev) {
+  const st = eventStats(ev);
+  const L = (k, v) => esc(t(k, v));
+  const body = openModal(`
+    <div class="modal-head"><div><h2>${L('log.title')}</h2><p class="muted small">${esc(ev.title)} · ${esc(fmtDate(new Date(ev.starts_at)))}</p></div>${closeBtn()}</div>
+    <div class="section-title">${ic('users', 'sm')}${L('log.signups')} <span class="count">${st.parts.length}</span></div>
+    <ul class="people">${st.parts.map((p, i) => `<li><span class="pos">${i + 1}.</span><span class="who">${personLabel(p)}</span>
+      <span class="muted small">${L('log.signedUpAt', { time: fmtStamp(p.joined_at) })}</span></li>`).join('') || `<li class="none">${L('ev.nobody')}</li>`}</ul>
+    <div class="section-title">${ic('history', 'sm')}${L('log.entries')}</div>
+    <div id="log-body">${skeletons('row-sk', 3)}</div>
+    <p class="muted small log-note">${L('log.locked')}</p>
+    <div class="modal-foot"><button type="button" id="log-back">${L('back')}</button></div>`);
+  $('#log-back', body).addEventListener('click', () => eventDetail(ev.id));
+  const rows = check(await sb.from('event_log').select('*').eq('series_id', ev.series_id)
+    .or(`event_id.is.null,event_id.eq.${ev.id}`).order('created_at').order('id'));
+  const el = $('#log-body', body);
+  if (el) el.innerHTML = logList(rows, false);
+}
+
+async function orgHistory() {
+  const L = (k) => esc(t(k));
+  const body = openModal(`
+    <div class="modal-head"><h2>${L('log.orgTitle')}</h2>${closeBtn()}</div>
+    <div id="log-body">${skeletons('row-sk', 5)}</div>
+    <p class="muted small log-note">${L('log.locked')}</p>`);
+  const rows = check(await sb.from('event_log').select('*').eq('org_id', state.orgId)
+    .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(300));
+  const el = $('#log-body', body);
+  if (el) el.innerHTML = logList(rows, true);
 }
 
 function seriesEdit(s, ev) {

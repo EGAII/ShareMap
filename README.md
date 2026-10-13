@@ -18,7 +18,10 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
 - **Place covers**: each place gets a generated map-style cover in its category's colour, showing the
   place name and the next time something is planned there (date and time follow the chosen language).
   Click the time to jump to that event. No external image service, no cost.
-- **Categories**: you create them yourselves, with two levels (main category → sub-category), e.g. `Food › Ramen`.
+- **Categories**: two levels (main category → sub-category), e.g. `Food › Ramen`. Only the organization's owner
+  can add, rename or delete them; other members don't see the Categories tab.
+- **Adding places**: each member can add 1 place a day (Japan time), or 2 a day once they have created an event.
+  The owner has no limit. A place can be edited or deleted only by the person who added it, or by the owner.
 - **Calendar**: pick a place from the list and create an event.
   - **Repeat**: weekly (choose weekdays, every N weeks), daily, or monthly, with an optional end date.
     A Supabase cron job runs every night and keeps creating dates 90 days ahead.
@@ -26,6 +29,14 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   - **People limit**: people can still join after it's full. They go on the **waiting list**, which everyone
     can see, and move up automatically when someone leaves.
   - Bring a guest, cancel a single date, edit or stop a series, add to Google Calendar.
+  - Anyone can create an event; only the person who created it can edit, cancel or delete it.
+    Each event shows when and by whom it was created.
+  - **History**: every event has a *History* button showing who signed up and when, and every
+    create / edit / cancel / delete by the organizer. *History* on the calendar shows the whole
+    organization's record, including deleted events. The record is written by the database itself and
+    nobody, the owner included, can change or delete it.
+- **Owner controls**: the organization's owner can remove anyone's sign-up, and on the **Members** page can
+  turn off *Can create events* or *Can join events* for any member.
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).
 - **Add to home screen**: a button in the top bar (and on the sign-in screen) shows how to add ShareMap to an
   iPhone or Android home screen; it then opens like an app with its own icon.
@@ -71,6 +82,12 @@ Members sign in with email + password.
 
 People who used the site before passwords existed have no password yet: they can set one under
 **Members → Password** while still signed in, or use **Forgot password?** on the sign-in screen.
+
+### Updating an existing project
+
+When you pull a new version, open **SQL Editor → New query**, paste the whole of
+[`supabase/schema.sql`](supabase/schema.sql) again and click **Run**. It is safe to run more than once and keeps
+your data.
 
 ### 5. Start using it
 

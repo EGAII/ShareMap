@@ -55,6 +55,9 @@ create table if not exists public.org_members (
   primary key (org_id, user_id)
 );
 create index if not exists org_members_user_idx on public.org_members(user_id);
+-- The owner can stop a member from creating events or from joining them.
+alter table public.org_members add column if not exists can_create boolean not null default true;
+alter table public.org_members add column if not exists can_join   boolean not null default true;
 
 create or replace function public.is_org_member(p_org bigint) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -64,6 +67,16 @@ $$;
 create or replace function public.is_org_owner(p_org bigint) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.org_members where org_id = p_org and user_id = auth.uid() and role = 'owner');
+$$;
+
+create or replace function public.can_create_in(p_org bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.org_members where org_id = p_org and user_id = auth.uid() and can_create);
+$$;
+
+create or replace function public.can_join_in(p_org bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.org_members where org_id = p_org and user_id = auth.uid() and can_join);
 $$;
 
 create or replace function public.shares_org_with(p_user uuid) returns boolean
@@ -126,6 +139,16 @@ begin
   return code;
 end $$;
 
+create or replace function public.set_member_permissions(p_org bigint, p_user uuid, p_can_create boolean, p_can_join boolean)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_org_owner(p_org) then raise exception 'Only the owner can do this'; end if;
+  update public.org_members set can_create = p_can_create, can_join = p_can_join
+   where org_id = p_org and user_id = p_user and role <> 'owner';
+  if not found then raise exception 'The owner cannot be restricted'; end if;
+end $$;
+
 -- When someone leaves: delete empty orgs, and make sure an owner remains.
 create or replace function public.on_member_removed() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -135,7 +158,7 @@ begin
   elsif not exists (select 1 from public.org_members where org_id = old.org_id) then
     delete from public.organizations where id = old.org_id;
   elsif not exists (select 1 from public.org_members where org_id = old.org_id and role = 'owner') then
-    update public.org_members set role = 'owner'
+    update public.org_members set role = 'owner', can_create = true, can_join = true
     where (org_id, user_id) = (
       select org_id, user_id from public.org_members where org_id = old.org_id order by joined_at limit 1);
   end if;
@@ -148,9 +171,10 @@ create trigger member_removed
   for each row execute function public.on_member_removed();
 
 revoke execute on function public.create_organization(text), public.join_organization(text),
-  public.regenerate_invite_code(bigint) from public, anon;
+  public.regenerate_invite_code(bigint), public.set_member_permissions(bigint, uuid, boolean, boolean) from public, anon;
 grant execute on function public.create_organization(text), public.join_organization(text),
-  public.regenerate_invite_code(bigint), public.is_org_member(bigint), public.is_org_owner(bigint)
+  public.regenerate_invite_code(bigint), public.set_member_permissions(bigint, uuid, boolean, boolean),
+  public.is_org_member(bigint), public.is_org_owner(bigint), public.can_create_in(bigint), public.can_join_in(bigint)
   to authenticated;
 
 -- ---------------------------------------------------------------------
@@ -207,9 +231,38 @@ create table if not exists public.places (
 );
 create index if not exists places_org_idx on public.places(org_id);
 
-create or replace function public.check_place() returns trigger
-language plpgsql as $$
+-- Places a member may add per day (Japan time): 1, or 2 for members who have
+-- created an event. null = no limit (the owner).
+create or replace function public.place_daily_limit(p_org bigint) returns int
+language plpgsql stable security definer set search_path = public as $$
 begin
+  if public.is_org_owner(p_org) then return null; end if;
+  if exists (select 1 from public.event_series where org_id = p_org and created_by = auth.uid()) then return 2; end if;
+  return 1;
+end $$;
+
+create or replace function public.check_place() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare lim int; used int;
+begin
+  if auth.uid() is not null then   -- requests from the site (not the dashboard)
+    if tg_op = 'UPDATE' then
+      -- who added it, when, and in which organization never change
+      new.created_by := old.created_by;
+      new.created_at := old.created_at;
+      new.org_id     := old.org_id;
+    else
+      new.created_by := auth.uid();
+      new.created_at := now();
+      lim := public.place_daily_limit(new.org_id);
+      if lim is not null then
+        select count(*) into used from public.places
+         where org_id = new.org_id and created_by = auth.uid()
+           and (created_at at time zone 'Asia/Tokyo')::date = (now() at time zone 'Asia/Tokyo')::date;
+        if used >= lim then raise exception 'PLACE_DAILY_LIMIT %', lim; end if;
+      end if;
+    end if;
+  end if;
   if new.category_id is not null
      and not exists (select 1 from public.categories where id = new.category_id and org_id = new.org_id) then
     raise exception 'Category belongs to another organization';
@@ -375,10 +428,11 @@ begin
         returning id into new_id;
 
         if new_id is not null then
-          -- auto-join subscribers, in the order they subscribed
+          -- auto-join subscribers who may still join, in the order they subscribed
           insert into public.event_participants(event_id, user_id, joined_at)
           select new_id, ss.user_id, ss.created_at
           from public.series_subscribers ss
+          join public.org_members m on m.org_id = s.org_id and m.user_id = ss.user_id and m.can_join
           where ss.series_id = s.id
           on conflict do nothing;
           n := n + 1;
@@ -447,6 +501,146 @@ create trigger subscriber_changed
   for each row execute function public.on_subscriber_changed();
 
 -- ---------------------------------------------------------------------
+-- Event history: an append-only record of sign-ups and of what organizers
+-- created, edited, cancelled or deleted. Written only by the triggers
+-- below; nobody (the owner included) can edit or delete a row. It has no
+-- foreign keys, so the record stays when the event or organization goes.
+-- ---------------------------------------------------------------------
+create table if not exists public.event_log (
+  id          bigint generated always as identity primary key,
+  org_id      bigint not null,
+  series_id   bigint not null,
+  event_id    bigint,                        -- null = the whole event / series
+  starts_at   timestamptz,                   -- the date it concerns, if any
+  title       text not null default '',      -- event title at the time
+  action      text not null,                 -- created | edited | deleted | cancelled | restored
+                                             -- | date_deleted | joined | left | removed
+  actor_id    uuid,                          -- null = done by the system (nightly job)
+  actor_name  text not null default '',
+  target_id   uuid,                          -- the participant, for joined / left / removed
+  target_name text not null default '',
+  details     jsonb not null default '{}',
+  created_at  timestamptz not null default now()
+);
+create index if not exists event_log_org_idx on public.event_log(org_id, created_at desc);
+create index if not exists event_log_series_idx on public.event_log(series_id, created_at);
+
+create or replace function public.event_log_readonly() returns trigger
+language plpgsql as $$
+begin
+  raise exception 'Event history cannot be changed or deleted';
+end $$;
+
+drop trigger if exists event_log_no_change on public.event_log;
+create trigger event_log_no_change
+  before update or delete on public.event_log
+  for each row execute function public.event_log_readonly();
+drop trigger if exists event_log_no_truncate on public.event_log;
+create trigger event_log_no_truncate
+  before truncate on public.event_log
+  for each statement execute function public.event_log_readonly();
+
+create or replace function public.write_event_log(
+  p_org bigint, p_series bigint, p_event bigint, p_starts timestamptz, p_title text, p_action text,
+  p_target uuid default null, p_details jsonb default '{}'
+) returns void
+language sql security definer set search_path = public as $$
+  insert into public.event_log(org_id, series_id, event_id, starts_at, title, action,
+                               actor_id, actor_name, target_id, target_name, details)
+  values (p_org, p_series, p_event, p_starts, coalesce(p_title, ''), p_action,
+          auth.uid(), coalesce((select display_name from public.profiles where id = auth.uid()), ''),
+          p_target, coalesce((select display_name from public.profiles where id = p_target), ''),
+          coalesce(p_details, '{}'));
+$$;
+
+create or replace function public.log_series() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare ch jsonb := '{}';
+begin
+  if tg_op = 'INSERT' then
+    perform public.write_event_log(new.org_id, new.id, null, null, new.title, 'created', null,
+      jsonb_build_object('start_date', new.start_date, 'start_time', to_char(new.start_time, 'HH24:MI'),
+                         'duration_minutes', new.duration_minutes, 'freq', new.freq, 'capacity', new.capacity));
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if new.title       is distinct from old.title       then ch := ch || jsonb_build_object('title',       jsonb_build_array(old.title, new.title)); end if;
+    if new.description is distinct from old.description then ch := ch || jsonb_build_object('description', jsonb_build_array(old.description, new.description)); end if;
+    if new.capacity    is distinct from old.capacity    then ch := ch || jsonb_build_object('capacity',    jsonb_build_array(old.capacity, new.capacity)); end if;
+    if new.until_date  is distinct from old.until_date  then ch := ch || jsonb_build_object('until_date',  jsonb_build_array(old.until_date, new.until_date)); end if;
+    if new.active      is distinct from old.active      then ch := ch || jsonb_build_object('active',      jsonb_build_array(old.active, new.active)); end if;
+    if ch <> '{}' then
+      perform public.write_event_log(new.org_id, new.id, null, null, new.title, 'edited', null, ch);
+    end if;
+    return new;
+  else
+    -- skip when the whole organization is being deleted
+    if exists (select 1 from public.organizations where id = old.org_id) then
+      perform public.write_event_log(old.org_id, old.id, null, null, old.title, 'deleted', null,
+        case when exists (select 1 from public.places where id = old.place_id) then '{}'::jsonb
+             else '{"place_deleted": true}'::jsonb end);
+    end if;
+    return old;
+  end if;
+end $$;
+
+-- Named so it fires before series_changed (triggers run in name order),
+-- so "created" comes before the auto-joins of the first dates.
+drop trigger if exists series_audit on public.event_series;
+create trigger series_audit
+  after insert or update or delete on public.event_series
+  for each row execute function public.log_series();
+
+-- Cancelling/restoring one date, or deleting one date directly.
+-- Dates removed because the series was edited or deleted are covered by that entry.
+create or replace function public.log_event() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' then
+    if new.cancelled is distinct from old.cancelled then
+      perform public.write_event_log(new.org_id, new.series_id, new.id, new.starts_at, new.title,
+        case when new.cancelled then 'cancelled' else 'restored' end);
+    end if;
+    return new;
+  end if;
+  if pg_trigger_depth() = 1 then
+    perform public.write_event_log(old.org_id, old.series_id, old.id, old.starts_at, old.title, 'date_deleted');
+  end if;
+  return old;
+end $$;
+
+drop trigger if exists event_logged on public.events;
+create trigger event_logged
+  after update or delete on public.events
+  for each row execute function public.log_event();
+
+-- Sign-ups: join, leave, or removed by the organizer / owner.
+create or replace function public.log_participant() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare e public.events;
+begin
+  if tg_op = 'INSERT' then
+    select * into e from public.events where id = new.event_id;
+    perform public.write_event_log(e.org_id, e.series_id, e.id, e.starts_at, e.title, 'joined', new.user_id,
+      jsonb_build_object('guest_name', new.guest_name, 'joined_at', new.joined_at));
+    return new;
+  end if;
+  select * into e from public.events where id = old.event_id;
+  if e.id is null then return old; end if;   -- the date itself was deleted
+  perform public.write_event_log(e.org_id, e.series_id, e.id, e.starts_at, e.title,
+    case when auth.uid() = old.user_id then 'left' else 'removed' end, old.user_id,
+    jsonb_build_object('guest_name', old.guest_name, 'joined_at', old.joined_at));
+  return old;
+end $$;
+
+drop trigger if exists participant_logged on public.event_participants;
+create trigger participant_logged
+  after insert or delete on public.event_participants
+  for each row execute function public.log_participant();
+
+revoke execute on function public.write_event_log(bigint, bigint, bigint, timestamptz, text, text, uuid, jsonb)
+  from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------
 alter table public.profiles           enable row level security;
@@ -458,6 +652,7 @@ alter table public.event_series       enable row level security;
 alter table public.events             enable row level security;
 alter table public.event_participants enable row level security;
 alter table public.series_subscribers enable row level security;
+alter table public.event_log          enable row level security;
 
 do $$
 declare r record;
@@ -466,7 +661,7 @@ begin
     select policyname, tablename from pg_policies
     where schemaname = 'public'
       and tablename in ('profiles','organizations','org_members','categories','places','event_series',
-                        'events','event_participants','series_subscribers')
+                        'events','event_participants','series_subscribers','event_log')
   loop
     execute format('drop policy %I on public.%I', r.policyname, r.tablename);
   end loop;
@@ -489,16 +684,26 @@ create policy om_select on public.org_members for select to authenticated using 
 create policy om_delete on public.org_members for delete to authenticated
   using (user_id = auth.uid() or public.is_org_owner(org_id));
 
--- categories & places: any member of the organization
-create policy cat_all on public.categories for all to authenticated
-  using (public.is_org_member(org_id)) with check (public.is_org_member(org_id));
-create policy pl_all on public.places for all to authenticated
-  using (public.is_org_member(org_id)) with check (public.is_org_member(org_id));
+-- categories: members read, only the owner adds, renames or deletes
+create policy cat_select on public.categories for select to authenticated using (public.is_org_member(org_id));
+create policy cat_insert on public.categories for insert to authenticated with check (public.is_org_owner(org_id));
+create policy cat_update on public.categories for update to authenticated
+  using (public.is_org_owner(org_id)) with check (public.is_org_owner(org_id));
+create policy cat_delete on public.categories for delete to authenticated using (public.is_org_owner(org_id));
 
--- event_series: members read, creator edits
+-- places: members read and add (daily limit in check_place); the person who added
+-- a place, or the owner, edits or deletes it
+create policy pl_select on public.places for select to authenticated using (public.is_org_member(org_id));
+create policy pl_insert on public.places for insert to authenticated with check (public.is_org_member(org_id));
+create policy pl_update on public.places for update to authenticated
+  using (created_by = auth.uid() or public.is_org_owner(org_id)) with check (public.is_org_member(org_id));
+create policy pl_delete on public.places for delete to authenticated
+  using (created_by = auth.uid() or public.is_org_owner(org_id));
+
+-- event_series: members read, creator edits (and only the creator: not even the owner)
 create policy es_select on public.event_series for select to authenticated using (public.is_org_member(org_id));
 create policy es_insert on public.event_series for insert to authenticated
-  with check (public.is_org_member(org_id) and created_by = auth.uid());
+  with check (public.can_create_in(org_id) and created_by = auth.uid());
 create policy es_update on public.event_series for update to authenticated
   using (created_by = auth.uid()) with check (created_by = auth.uid() and public.is_org_member(org_id));
 create policy es_delete on public.event_series for delete to authenticated using (created_by = auth.uid());
@@ -509,23 +714,28 @@ create policy ev_update on public.events for update to authenticated
   using (created_by = auth.uid()) with check (created_by = auth.uid());
 create policy ev_delete on public.events for delete to authenticated using (created_by = auth.uid());
 
--- participants: join/leave yourself (and your guests); organizer may remove anyone
+-- participants: join/leave yourself (and your guests); organizer or owner may remove anyone
 create policy ep_select on public.event_participants for select to authenticated
   using (exists (select 1 from public.events e where e.id = event_id and public.is_org_member(e.org_id)));
 create policy ep_insert on public.event_participants for insert to authenticated
   with check (user_id = auth.uid()
-              and exists (select 1 from public.events e where e.id = event_id and public.is_org_member(e.org_id)));
+              and exists (select 1 from public.events e where e.id = event_id and public.can_join_in(e.org_id)));
 create policy ep_delete on public.event_participants for delete to authenticated
   using (user_id = auth.uid()
-         or exists (select 1 from public.events e where e.id = event_id and e.created_by = auth.uid()));
+         or exists (select 1 from public.events e where e.id = event_id
+                    and (e.created_by = auth.uid() or public.is_org_owner(e.org_id))));
 
 -- subscribers
 create policy ss_select on public.series_subscribers for select to authenticated
   using (exists (select 1 from public.event_series s where s.id = series_id and public.is_org_member(s.org_id)));
 create policy ss_insert on public.series_subscribers for insert to authenticated
   with check (user_id = auth.uid()
-              and exists (select 1 from public.event_series s where s.id = series_id and public.is_org_member(s.org_id)));
+              and exists (select 1 from public.event_series s where s.id = series_id and public.can_join_in(s.org_id)));
 create policy ss_delete on public.series_subscribers for delete to authenticated using (user_id = auth.uid());
+
+-- event history: members read; no insert/update/delete policy, and no table rights either
+create policy el_select on public.event_log for select to authenticated using (public.is_org_member(org_id));
+revoke insert, update, delete, truncate on public.event_log from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- Cron: every day at 03:00 JST (18:00 UTC) extend repeating events.
