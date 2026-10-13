@@ -34,6 +34,10 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
     create / edit / cancel / delete by the organizer. *History* on the calendar shows the whole
     organization's record, including deleted events. The record is written by the database itself and
     nobody, the owner included, can change or delete it.
+- **Guests**: on the sign-in screen, *Guest* lets someone in with only a nickname (no email). Guests can join a
+  group with an invite code and sign up for events, but cannot create groups or events. A guest account is
+  deleted automatically 7 days after joining its first group (checked every hour), together with its sign-ups;
+  the event history keeps the record. Signing out of a guest account loses it.
 - **Owner controls**: the organization's owner can remove anyone's sign-up. On the **Permissions** page (only the
   owner sees it) the owner can make a member an *Organizer*, turn off *Can create events* or *Can join events*,
   remove someone from the group, or **ban** them so they can never rejoin (until unbanned).
@@ -77,6 +81,8 @@ Members sign in with email + password.
   - **Confirm email**: turn it **off** if you don't want new members to confirm their address before using the
     site; leave it on if you do (then they need the confirmation email first).
   - **Minimum password length**: 8 matches the site.
+  - **Allow anonymous sign-ins**: turn it **on** for the *Guest* option (under **Authentication → Sign In / Providers**).
+    Anyone with the site link can create a guest account; **Authentication → Rate Limits** caps how many per hour.
 - **Forgot password** sends an email, so it needs working email (custom SMTP, e.g. a Gmail app password, under
   **Authentication → Emails → SMTP Settings**). The **Reset Password** template is the one used.
 

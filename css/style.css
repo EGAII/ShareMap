@@ -207,7 +207,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
 }
 .auth-lang { display: flex; justify-content: flex-end; margin: -1rem -1rem .5rem 0; }
 /* Sign in / Create account */
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; margin: .5rem 0 1.25rem;
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; margin: .5rem 0 1.25rem;
        background: var(--surface-2); border-radius: 9px; }
 .seg button { border: 0; background: transparent; color: var(--muted); padding: .5rem; border-radius: 7px; }
 .seg button:hover { background: transparent; color: var(--text); }
@@ -608,3 +608,14 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
 .up-act .chev { color: var(--faint); }
 .up-meta .spots { color: var(--accent-ink); font-weight: 500; }
 .up-meta .spots.full { color: var(--warn); }
+
+/* Guest account notice */
+.guest-banner { display: flex; align-items: center; gap: .5rem; margin: 0 0 1rem; padding: .6rem .9rem;
+                background: var(--warn-soft); color: var(--warn); border-radius: var(--r-md); font-size: .88rem; }
+.guest-banner .ic { flex: none; }
+
+/* Member identity tags on the right of member rows */
+.tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: .3rem; }
+.tags .role, .tags .badge { margin-left: 0; }
+.who-line .tags { margin-left: .45rem; vertical-align: .1em; }
+.role.guest { color: var(--warn); background: var(--warn-soft); }

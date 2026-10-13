@@ -17,12 +17,21 @@ create table if not exists public.profiles (
   display_name text not null default '',
   created_at   timestamptz not null default now()
 );
+-- Guests sign in with only a nickname (Supabase anonymous sign-in)
+alter table public.profiles add column if not exists is_guest boolean not null default false;
+
+-- How long a guest account lives after joining its first group
+create or replace function public.guest_days() returns int
+language sql immutable as $$ select 7 $$;
 
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles(id, display_name)
-  values (new.id, split_part(new.email, '@', 1))
+  insert into public.profiles(id, display_name, is_guest)
+  values (new.id,
+          coalesce(nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''),
+                   nullif(split_part(coalesce(new.email, ''), '@', 1), ''), 'Guest'),
+          coalesce(new.is_anonymous, false))
   on conflict do nothing;
   return new;
 end $$;
@@ -32,9 +41,16 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
-insert into public.profiles(id, display_name)
-select id, split_part(email, '@', 1) from auth.users
+insert into public.profiles(id, display_name, is_guest)
+select id, coalesce(nullif(split_part(coalesce(email, ''), '@', 1), ''), 'Guest'), coalesce(is_anonymous, false)
+from auth.users
 on conflict do nothing;
+
+-- true when the signed-in user is a guest
+create or replace function public.is_guest() returns boolean
+language sql stable as $$
+  select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false);
+$$;
 
 -- ---------------------------------------------------------------------
 -- Organizations & members
@@ -121,6 +137,7 @@ language plpgsql security definer set search_path = public as $$
 declare o public.organizations;
 begin
   if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if public.is_guest() then raise exception 'GUEST_NOT_ALLOWED'; end if;
   if length(trim(coalesce(p_name, ''))) = 0 then raise exception 'Name is required'; end if;
   insert into public.organizations(name, invite_code, created_by)
   values (trim(p_name), public.new_invite_code(), auth.uid())
@@ -745,7 +762,7 @@ create policy pl_delete on public.places for delete to authenticated
 -- event_series: members read, creator edits (and only the creator: not even the owner)
 create policy es_select on public.event_series for select to authenticated using (public.is_org_member(org_id));
 create policy es_insert on public.event_series for insert to authenticated
-  with check (public.can_create_in(org_id) and created_by = auth.uid());
+  with check (public.can_create_in(org_id) and created_by = auth.uid() and not public.is_guest());
 create policy es_update on public.event_series for update to authenticated
   using (created_by = auth.uid()) with check (created_by = auth.uid() and public.is_org_member(org_id));
 create policy es_delete on public.event_series for delete to authenticated using (created_by = auth.uid());
@@ -778,6 +795,35 @@ create policy ss_delete on public.series_subscribers for delete to authenticated
 -- event history: members read; no insert/update/delete policy, and no table rights either
 create policy el_select on public.event_log for select to authenticated using (public.is_org_member(org_id));
 revoke insert, update, delete, truncate on public.event_log from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- Guest accounts are deleted guest_days() after joining their first group
+-- (or after signing in, if they never joined one). Their sign-ups are
+-- removed first so the event history still shows their name.
+-- ---------------------------------------------------------------------
+create or replace function public.delete_expired_guests() returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  ids uuid[];
+begin
+  select coalesce(array_agg(u.id), '{}') into ids
+  from auth.users u
+  where u.is_anonymous
+    and coalesce((select min(m.joined_at) from public.org_members m where m.user_id = u.id), u.created_at)
+        < now() - make_interval(days => public.guest_days());
+  if cardinality(ids) = 0 then return 0; end if;
+  delete from public.event_participants where user_id = any(ids);
+  delete from auth.users where id = any(ids);
+  return cardinality(ids);
+end $$;
+
+revoke execute on function public.delete_expired_guests() from public, anon, authenticated;
+
+select cron.schedule(
+  'sharemap-delete-guests',
+  '15 * * * *',
+  $$select public.delete_expired_guests();$$
+);
 
 -- ---------------------------------------------------------------------
 -- Cron: every day at 03:00 JST (18:00 UTC) extend repeating events.

@@ -64,7 +64,8 @@ function check({ error, data }) {
     const msg = error.message || '';
     const limit = /PLACE_DAILY_LIMIT (\d+)/.exec(msg);
     toast(limit ? t('place.limit', { n: Number(limit[1]) })
-      : msg.includes('BANNED_FROM_ORG') ? t('org.banned') : msg, true);
+      : msg.includes('BANNED_FROM_ORG') ? t('org.banned')
+      : msg.includes('GUEST_NOT_ALLOWED') ? t('guest.noOrg') : msg, true);
     throw error;
   }
   return data;
@@ -87,7 +88,7 @@ function applyLanguage() {
   $$('.app-title').forEach((el) => { el.textContent = title; });
   $('#setup-body').innerHTML = t('setup.body');
   setAuthMode(authMode);
-  if (state.profile) renderOrgSelect();
+  if (state.profile) { renderOrgSelect(); renderGuestBanner(); }
 }
 document.addEventListener('change', (e) => {
   if (!e.target.matches('select.lang-select')) return;
@@ -159,17 +160,23 @@ function setAuthMode(mode) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', String(on));
   });
+  const guest = mode === 'guest';
   $('#auth-tabs').hidden = mode === 'reset';
-  $('#auth-form [data-up]').hidden = mode !== 'up';
-  $('#auth-form [data-pw]').hidden = mode === 'reset';
+  $('#auth-form [data-up]').hidden = mode !== 'up' && !guest;
+  $('#auth-form [data-pw]').hidden = mode === 'reset' || guest;
+  $('#auth-form [data-email]').hidden = guest;
+  $('#auth-form [data-guest]').hidden = !guest;
+  $('#auth-email').required = !guest;
+  $('#auth-name').required = guest;
+  $('label[for="auth-name"]').textContent = t(guest ? 'guest.name' : 'auth.name');
   const pw = $('#auth-password');
-  pw.required = mode !== 'reset';
+  pw.required = mode !== 'reset' && !guest;
   pw.autocomplete = mode === 'up' ? 'new-password' : 'current-password';
   if (mode === 'up') pw.minLength = MIN_PASSWORD; else pw.removeAttribute('minlength');
   pw.placeholder = mode === 'up' ? t('auth.short') : '';
-  $('#auth-submit').textContent = t(mode === 'in' ? 'auth.signIn' : mode === 'up' ? 'auth.signUp' : 'auth.sendReset');
+  $('#auth-submit').textContent = t({ in: 'auth.signIn', up: 'auth.signUp', guest: 'guest.go' }[mode] || 'auth.sendReset');
   $('#auth-forgot').textContent = t(mode === 'reset' ? 'auth.back' : 'auth.forgot');
-  $('#auth-forgot').hidden = mode === 'up';
+  $('#auth-forgot').hidden = mode === 'up' || guest;
   authNote('');
 }
 function authNote(msg, kind = 'error') {
@@ -217,7 +224,12 @@ $('#auth-form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   authNote('');
   try {
-    if (authMode === 'in') {
+    if (authMode === 'guest') {
+      const name = $('#auth-name').value.trim();
+      if (!name) return;
+      const { error } = await sb.auth.signInAnonymously({ options: { data: { display_name: name } } });
+      if (error) authNote(authMessage(error));
+    } else if (authMode === 'in') {
       const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) authNote(authMessage(error));
     } else if (authMode === 'up') {
@@ -241,7 +253,11 @@ $('#auth-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
   }
 });
-$('#signout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
+$('#signout').addEventListener('click', async () => {
+  if (isGuest() && !confirm(t('guest.signOutConfirm'))) return;
+  await sb.auth.signOut();
+  location.reload();
+});
 
 // Opened from a "reset password" email: ask for the new password
 function newPasswordModal() {
@@ -321,18 +337,19 @@ sb.auth.onAuthStateChange((event, session) => {
 
 async function boot(user) {
   state.user = user;
-  const emailName = user.email.split('@')[0];
+  const emailName = (user.email || '').split('@')[0];
   const chosenName = String(user.user_metadata?.display_name || '').trim();
   let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
   if (!profile) {
     profile = check(await sb.from('profiles')
-      .insert({ id: user.id, display_name: chosenName || emailName }).select().single());
-  } else if (chosenName && profile.display_name === emailName) {
+      .insert({ id: user.id, display_name: chosenName || emailName || 'Guest', is_guest: !!user.is_anonymous }).select().single());
+  } else if (chosenName && emailName && profile.display_name === emailName) {
     // Name typed at sign-up (the database trigger only knows the email)
     profile = check(await sb.from('profiles').update({ display_name: chosenName }).eq('id', user.id).select().single());
   }
   state.profile = profile;
   $('#topbar').hidden = false;
+  $('#password-card').hidden = isGuest();
 
   const pending = store.get('fsm.pendingJoin');
   if (pending) {
@@ -345,9 +362,9 @@ async function boot(user) {
 
 async function loadOrgs() {
   const rows = check(await sb.from('org_members')
-    .select('role, organizations(id, name, invite_code)').eq('user_id', state.user.id));
+    .select('role, joined_at, organizations(id, name, invite_code)').eq('user_id', state.user.id));
   state.orgs = rows.filter((r) => r.organizations)
-    .map((r) => ({ ...r.organizations, role: r.role }))
+    .map((r) => ({ ...r.organizations, role: r.role, joined_at: r.joined_at }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const saved = Number(store.get('fsm.org'));
   if (!state.orgs.some((o) => o.id === state.orgId)) {
@@ -356,9 +373,20 @@ async function loadOrgs() {
 }
 
 const currentOrg = () => state.orgs.find((o) => o.id === state.orgId);
+const isGuest = () => !!state.user?.is_anonymous;
+// Same rule as delete_expired_guests(): 7 days after joining the first group
+const GUEST_DAYS = 7;
+const guestExpiry = (joinedAt) => addDays(new Date(joinedAt), GUEST_DAYS);
+function renderGuestBanner() {
+  const el = $('#guest-banner');
+  el.hidden = !isGuest();
+  if (!isGuest()) return;
+  const first = state.orgs.map((o) => o.joined_at).sort()[0] || state.user.created_at;
+  el.innerHTML = `${ic('hourglass', 'sm')}<span>${esc(t('guest.banner', { date: fmtDateLong(guestExpiry(first)) }))}</span>`;
+}
 const isAdmin = () => currentOrg()?.role === 'owner';
 const myMember = () => state.members.find((m) => m.user_id === state.user.id);
-const canCreate = () => myMember()?.can_create !== false;
+const canCreate = () => !isGuest() && myMember()?.can_create !== false;
 const canJoin = () => myMember()?.can_join !== false;
 const memberName = (id) => state.members.find((m) => m.user_id === id)?.profiles?.display_name || '—';
 const canEditPlace = (p) => p.created_by === state.user.id || isAdmin();
@@ -375,6 +403,7 @@ const fmtStamp = (s) => new Date(s).toLocaleString(i18n.locale,
 
 // Show the chosen organization, or the create/join screen when there is none.
 async function enterOrg(id) {
+  renderGuestBanner();
   state.orgId = id;
   store.set('fsm.org', id);
   state.selectedCat = 'root';
@@ -421,12 +450,13 @@ function renderOnboarding(el) {
       <input name="code" required placeholder="${L('onb.codePh')}" autocomplete="off">
       <button class="primary">${L('onb.join')}</button>
     </form>
+    ${isGuest() ? `<p class="muted small">${L('guest.noOrg')}</p>` : `
     <div class="onb-or">${L('onb.or')}</div>
     <form class="stack" data-onb="create">
       <h3>${L('onb.createTitle')}</h3>
       <input name="name" required placeholder="${L('onb.namePh')}">
       <button>${L('onb.create')}</button>
-    </form>`;
+    </form>`}`;
   el.querySelectorAll('form').forEach((f) => f.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.submitter; btn.disabled = true;
@@ -459,7 +489,7 @@ async function loadBase() {
   const [cats, places, members] = await Promise.all([
     sb.from('categories').select('*').eq('org_id', org).order('sort_order').order('name'),
     sb.from('places').select('*').eq('org_id', org).order('name'),
-    sb.from('org_members').select('user_id, role, joined_at, organizer, can_create, can_join, profiles(display_name)').eq('org_id', org).order('joined_at'),
+    sb.from('org_members').select('user_id, role, joined_at, organizer, can_create, can_join, profiles(display_name, is_guest)').eq('org_id', org).order('joined_at'),
   ]);
   if (org !== state.orgId) return;   // switched organization meanwhile
   state.categories = check(cats);
@@ -945,12 +975,19 @@ async function copy(text) {
   catch { prompt('', text); }
 }
 
+// Identity tags (owner / organizer / guest) and restrictions, shown on the right
 function memberBadges(m) {
-  if (m.role === 'owner') return `<span class="role">${esc(t('org.owner'))}</span>`;
-  return (m.organizer ? `<span class="role">${esc(t('perm.organizer'))}</span>` : '')
-    + (m.can_create ? '' : `<span class="badge wait">${esc(t('perm.noCreate'))}</span>`)
-    + (m.can_join ? '' : `<span class="badge wait">${esc(t('perm.noJoin'))}</span>`);
+  const tag = (k, cls = '') => `<span class="role ${cls}">${esc(t(k))}</span>`;
+  const tags = m.role === 'owner' ? tag('org.owner')
+    : (m.profiles?.is_guest ? tag('guest.badge', 'guest') : '')
+      + (m.organizer ? tag('perm.organizer') : '')
+      + (m.can_create ? '' : `<span class="badge wait">${esc(t('perm.noCreate'))}</span>`)
+      + (m.can_join ? '' : `<span class="badge wait">${esc(t('perm.noJoin'))}</span>`);
+  return tags ? `<span class="tags">${tags}</span>` : '';
 }
+// Under the name: when a guest account will be deleted
+const memberNote = (m) => (m.profiles?.is_guest
+  ? `<span class="muted small block">${esc(t('guest.deletedOn', { date: fmtDate(guestExpiry(m.joined_at)) }))}</span>` : '');
 
 function renderOrgPage() {
   const org = currentOrg();
@@ -966,7 +1003,7 @@ function renderOrgPage() {
     const me = m.user_id === state.user.id;
     const name = m.profiles?.display_name || '?';
     return `<li><span class="who-line">${avatar(name)}<span>${esc(name)}${me ? ` <span class="muted">${esc(t('fam.you'))}</span>` : ''}${
-        memberBadges(m)}</span></span></li>`;
+        memberNote(m)}</span></span>${memberBadges(m)}</li>`;
   }).join('');
   $('#my-orgs').innerHTML = state.orgs.map((o) => `
     <li><span class="who-line">${avatar(o.name)}<span>${esc(o.name)}${o.role === 'owner' ? `<span class="role">${esc(t('org.owner'))}</span>` : ''}</span></span>
@@ -1006,7 +1043,7 @@ async function renderAdmin() {
   const perm = (m, k, label) => `<label class="checkline small"><input type="checkbox" data-perm="${k}" data-user="${m.user_id}" ${m[k] ? 'checked' : ''}> ${L(label)}</label>`;
   $('#admin-list').innerHTML = state.members.map((m) => {
     const name = m.profiles?.display_name || '?';
-    const head = `<span class="who-line">${avatar(name)}<span>${esc(name)}${memberBadges(m)}
+    const head = `<span class="who-line">${avatar(name)}<span>${esc(name)}${memberBadges(m)}${memberNote(m)}
       <span class="muted small block">${L('admin.joined', { date: fmtYmd(m.joined_at.slice(0, 10)) })}</span></span></span>`;
     if (m.role === 'owner') return `<li>${head}</li>`;
     return `<li>${head}
@@ -1300,7 +1337,7 @@ $('#upcoming').addEventListener('click', async (e) => {
 // Event form (create a one-off or repeating event)
 // ---------------------------------------------------------------------
 function eventForm({ placeId = null, date = null } = {}) {
-  if (!canCreate()) return toast(t('ban.noCreate'), true);
+  if (!canCreate()) return toast(t(isGuest() ? 'guest.noCreate' : 'ban.noCreate'), true);
   if (!state.places.length) return toast(t('ev.needPlace'), true);
   const d = date || dateKey(new Date());
   const place = state.places.find((p) => p.id === placeId);
