@@ -116,7 +116,7 @@ const state = {
   categories: [],
   places: [],
   members: [],
-  selectedCat: 'all',
+  selectedCat: 'root',  // 'root' (category tiles) | 'all' | 'none' | category id
   search: '',
   month: startOfMonth(new Date()),
   events: [],
@@ -207,7 +207,7 @@ const currentOrg = () => state.orgs.find((o) => o.id === state.orgId);
 async function enterOrg(id) {
   state.orgId = id;
   store.set('fsm.org', id);
-  state.selectedCat = 'all';
+  state.selectedCat = 'root';
   state.search = '';
   $('#place-search').value = '';
   renderOrgSelect();
@@ -373,48 +373,141 @@ function placeOptions(selected) {
 // ---------------------------------------------------------------------
 $('#place-search').addEventListener('input', (e) => { state.search = e.target.value.trim().toLowerCase(); renderPlaceList(); });
 $('#add-place').addEventListener('click', () => placeForm());
+// Category navigation: side tree, tiles and breadcrumb all use data-cat
+function selectCat(key) {
+  state.selectedCat = String(key);
+  renderPlaces();
+  const top = $('#view-places').getBoundingClientRect().top + window.scrollY - 80;
+  if (window.scrollY > top) window.scrollTo({ top, behavior: 'smooth' });
+}
 $('#cat-tree').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-cat]');
   if (!b) return;
-  state.selectedCat = b.dataset.cat;
-  renderPlaces();
+  // Clicking an open main category folds it again
+  if (b.dataset.main && b.getAttribute('aria-expanded') === 'true' && state.selectedCat === b.dataset.cat) return selectCat('root');
+  selectCat(b.dataset.cat);
+});
+$('#place-crumbs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-cat]');
+  if (b) selectCat(b.dataset.cat);
 });
 
 function placesInCat(sel) {
-  if (sel === 'all') return state.places;
+  if (sel === 'all' || sel === 'root') return state.places;
   if (sel === 'none') return state.places.filter((p) => !p.category_id);
   const id = Number(sel);
   const ids = new Set([id, ...childrenOf(id).map((c) => c.id)]);
   return state.places.filter((p) => ids.has(p.category_id));
 }
 
+// Which main category is unfolded (the selected one, or the parent of the selected sub-category)
+function openMainId() {
+  const c = catById(Number(state.selectedCat));
+  if (!c) return null;
+  return c.parent_id || c.id;
+}
+
 function renderPlaces() {
-  const btn = (key, label, cls = '') =>
-    `<button data-cat="${key}" class="${cls} ${String(state.selectedCat) === String(key) ? 'active' : ''}">
-       <span>${esc(label)}</span><span class="count">${placesInCat(String(key)).length}</span></button>`;
-  let h = btn('all', t('places.all'));
+  // A deleted or unknown category falls back to the start screen
+  const sel = state.selectedCat;
+  if (!['root', 'all', 'none'].includes(sel) && !catById(Number(sel))) state.selectedCat = 'root';
+  const open = openMainId();
+  const count = (key) => `<span class="count">${placesInCat(String(key)).length}</span>`;
+  const cls = (key) => (state.selectedCat === String(key) ? 'active' : '');
+  let h = `<button data-cat="all" class="${cls('all')}"><span>${esc(t('places.all'))}</span>${count('all')}</button>`;
   for (const p of parents()) {
-    h += btn(p.id, p.name);
-    for (const c of childrenOf(p.id)) h += btn(c.id, c.name, 'child');
+    const kids = childrenOf(p.id);
+    const expanded = open === p.id;
+    h += `<button data-cat="${p.id}" data-main="1" class="main ${cls(p.id)}" aria-expanded="${expanded}">
+        <span class="lbl">${kids.length ? ic('right', 'sm chev') : `<span class="chev-gap"></span>`}<span>${esc(p.name)}</span></span>${count(p.id)}</button>`;
+    if (expanded && kids.length) {
+      h += `<div class="kids">${kids.map((c) =>
+        `<button data-cat="${c.id}" class="child ${cls(c.id)}"><span>${esc(c.name)}</span>${count(c.id)}</button>`).join('')}</div>`;
+    }
   }
-  if (state.places.some((p) => !p.category_id)) h += btn('none', t('places.none'));
+  if (state.places.some((p) => !p.category_id)) {
+    h += `<button data-cat="none" class="${cls('none')}"><span>${esc(t('places.none'))}</span>${count('none')}</button>`;
+  }
   $('#cat-tree').innerHTML = h;
   renderPlaceList();
 }
 
+function catTile(cat, kind) {
+  const n = kind === 'none' ? placesInCat('none').length : placesInCat(String(cat.id)).length;
+  const kids = kind === 'none' ? [] : childrenOf(cat.id);
+  const subs = kids.slice(0, 3).map((c) => c.name).join(t('listSep')) + (kids.length > 3 ? ` +${kids.length - 3}` : '');
+  const hue = kind === 'none' ? 'hue-n' : catHue(cat);
+  return `<button type="button" class="cat-tile cover ${hue}" data-cat="${kind === 'none' ? 'none' : cat.id}">
+      ${coverArt({ name: `cat:${cat.name}` })}
+      <span class="cover-top"><span class="cover-cat">${esc(t('cats.placesCount', { n }))}</span>${ic('right', 'go')}</span>
+      <span class="tile-name">${esc(cat.name)}</span>
+      <span class="tile-subs">${esc(subs)}</span>
+    </button>`;
+}
+
+function crumbs(trail) {
+  const sep = ic('right', 'sm sep');
+  const parts = trail.map((c, i) => (i === trail.length - 1
+    ? `<span class="crumb current" aria-current="page">${esc(c.label)}</span>`
+    : `<button type="button" class="crumb" data-cat="${c.key}">${esc(c.label)}</button>`));
+  return parts.join(sep);
+}
+
 function renderPlaceList() {
-  let list = placesInCat(String(state.selectedCat));
+  const root = { key: 'root', label: t('nav.places') };
+  const sel = state.selectedCat;
+  const cat = catById(Number(sel));
+  let trail = [root];
+  let tiles = '';
+  let lists = [];          // [{ title?, places }]
+
   if (state.search) {
-    list = list.filter((p) => [p.name, p.note, catPath(p.category_id)].join(' ').toLowerCase().includes(state.search));
+    const hits = state.places.filter((p) => [p.name, p.note, catPath(p.category_id)].join(' ').toLowerCase().includes(state.search));
+    trail = [root, { label: t('places.results') }];
+    lists = [{ places: hits }];
+  } else if (sel === 'all' || (sel === 'root' && !parents().length)) {
+    trail = parents().length ? [root, { label: t('places.all') }] : [root];
+    lists = [{ places: state.places }];
+  } else if (sel === 'none') {
+    trail = [root, { label: t('places.none') }];
+    lists = [{ places: placesInCat('none') }];
+  } else if (sel === 'root') {
+    tiles = parents().map((p) => catTile(p)).join('');
+    if (state.places.some((p) => !p.category_id)) tiles += catTile({ name: t('places.none') }, 'none');
+  } else if (cat && !cat.parent_id) {
+    trail = [root, { label: cat.name }];
+    const kids = childrenOf(cat.id);
+    const direct = state.places.filter((p) => p.category_id === cat.id);
+    if (kids.length) {
+      tiles = kids.map((c) => catTile(c)).join('');
+      if (direct.length) lists = [{ title: t('places.direct', { name: cat.name }), places: direct }];
+    } else {
+      lists = [{ places: direct }];
+    }
+  } else if (cat) {
+    const main = catById(cat.parent_id);
+    trail = [root, { key: main.id, label: main.name }, { label: cat.name }];
+    lists = [{ places: state.places.filter((p) => p.category_id === cat.id) }];
   }
-  if (!list.length) {
-    $('#place-list').innerHTML = state.places.length
-      ? `<div class="empty compact">${ic('search')}<span>${esc(t('places.empty'))}</span></div>`
-      : `<div class="empty">${ic('map')}<strong>${esc(t('places.emptyTitle'))}</strong><p>${esc(t('places.emptyAll'))}</p>
+
+  // On the start screen, offer "All places" next to the breadcrumb (the side list is hidden on phones)
+  const allLink = sel === 'root' && parents().length && state.places.length && !state.search
+    ? `<button type="button" class="crumb-all" data-cat="all">${esc(t('places.all'))} <span class="count">${state.places.length}</span></button>` : '';
+  $('#place-crumbs').innerHTML = `<div class="crumb-trail">${crumbs(trail)}</div>${allLink}`;
+
+  let html = tiles ? `<div class="cat-tiles">${tiles}</div>` : '';
+  for (const l of lists) {
+    if (l.title) html += `<h2 class="list-head">${esc(l.title)}</h2>`;
+    html += `<div class="place-grid">${l.places.map(placeCard).join('')}</div>`;
+  }
+  const shown = lists.reduce((n, l) => n + l.places.length, 0);
+  if (!state.places.length) {
+    html = `<div class="empty">${ic('map')}<strong>${esc(t('places.emptyTitle'))}</strong><p>${esc(t('places.emptyAll'))}</p>
            <button class="primary" data-act="add">${ic('plus')}${esc(t('places.add'))}</button></div>`;
-    return;
+  } else if (!tiles && !shown) {
+    html = `<div class="empty compact">${ic(state.search ? 'search' : 'folder')}<span>${esc(t('places.empty'))}</span></div>`;
   }
-  $('#place-list').innerHTML = list.map(placeCard).join('');
+  $('#place-list').innerHTML = html;
   // Pick up events created since the last look (at most every 10 s)
   if (Date.now() - state.nextAt > 10_000) {
     loadNext().then((changed) => { if (changed && state.view === 'places') renderPlaceList(); }).catch(() => {});
@@ -440,11 +533,12 @@ function seeded(seed) {   // mulberry32
   };
 }
 const COVER_HUES = 6;
-function coverHue(place) {
-  const c = catById(place.category_id);
-  const root = c?.parent_id ? catById(c.parent_id) : c;
+// Colour follows the main category, so a category's tile and its places match
+function catHue(cat) {
+  const root = cat?.parent_id ? catById(cat.parent_id) : cat;
   return root ? `hue-${hashStr(root.id + ':' + root.name) % COVER_HUES}` : 'hue-n';
 }
+const coverHue = (place) => catHue(catById(place.category_id));
 // Contour lines + a pin, deterministic per place name
 function coverArt(place) {
   const rnd = seeded(hashStr(place.name));
@@ -531,6 +625,8 @@ async function openEventFromCover(id, startsAt) {
 }
 
 $('#place-list').addEventListener('click', (e) => {
+  const tile = e.target.closest('button[data-cat]');
+  if (tile) return selectCat(tile.dataset.cat);
   const b = e.target.closest('button[data-act]');
   if (!b) return;           // the card's own link opens Google Maps
   e.preventDefault();
@@ -657,7 +753,7 @@ $('#cat-manage').addEventListener('click', async (e) => {
   } else {
     if (!confirm(t(c.parent_id ? 'cats.deleteChild' : 'cats.deleteParent', { name: c.name }))) return;
     check(await sb.from('categories').delete().eq('id', c.id));
-    if (String(state.selectedCat) === String(c.id)) state.selectedCat = 'all';
+    if (String(state.selectedCat) === String(c.id)) state.selectedCat = 'root';
   }
   await loadBase();
   renderCategories();

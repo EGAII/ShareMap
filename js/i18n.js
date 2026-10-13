@@ -46,6 +46,7 @@ const DICT = {
     'places.search': 'Search places…', 'places.add': 'Add place', 'places.all': 'All places',
     'places.none': 'No category', 'places.empty': 'No places here.',
     'places.emptyTitle': 'Start your map', 'places.emptyAll': 'Open a place in Google Maps, tap Share, copy the link and paste it here.', skip: 'Skip to content',
+    'places.direct': 'Other places in {name}', 'places.results': 'Search results',
     'cover.next': 'Next: {title}', 'cover.none': 'No plans yet',
     'places.open': 'Open in Google Maps', 'places.event': 'Event',
     'place.addTitle': 'Add place', 'place.editTitle': 'Edit place', 'place.link': 'Google Maps share link',
@@ -60,7 +61,7 @@ const DICT = {
 
     'cats.title': 'Categories',
     'cats.newParentPh': 'New main category (e.g. Restaurants)', 'cats.none': 'No categories yet.',
-    'cats.placesCount': '{n} places', 'cats.newChildPh': 'New sub-category under {name}',
+    'cats.placesCount': '{n} places', 'cats.placesCount_one': '{n} place', 'cats.newChildPh': 'New sub-category under {name}',
     'cats.renamePrompt': 'New name',
     'cats.deleteChild': 'Delete “{name}”? Its places will become “No category”.',
     'cats.deleteParent': 'Delete “{name}” and all its sub-categories? Their places will become “No category”.',
@@ -142,6 +143,7 @@ const DICT = {
     'places.search': 'スポットを検索…', 'places.add': 'スポット追加', 'places.all': 'すべて',
     'places.none': '未分類', 'places.empty': 'ここにはスポットがありません。',
     'places.emptyTitle': 'マップを始めましょう', 'places.emptyAll': 'Google マップで場所を開き「共有」からリンクをコピーして、ここに貼り付けます。', skip: 'メインコンテンツへ移動',
+    'places.direct': '「{name}」のその他のスポット', 'places.results': '検索結果',
     'cover.next': '次回：{title}', 'cover.none': '予定なし',
     'places.open': 'Google マップで開く', 'places.event': 'イベント',
     'place.addTitle': 'スポット追加', 'place.editTitle': 'スポット編集', 'place.link': 'Google マップ共有リンク',
@@ -238,6 +240,7 @@ const DICT = {
     'places.search': '搜尋地點…', 'places.add': '新增地點', 'places.all': '全部地點',
     'places.none': '未分類', 'places.empty': '這裡沒有地點。',
     'places.emptyTitle': '開始建立地圖', 'places.emptyAll': '在 Google 地圖打開地點，點「分享」複製連結，然後貼到這裡。', skip: '跳到主要內容',
+    'places.direct': '「{name}」的其他地點', 'places.results': '搜尋結果',
     'cover.next': '下次：{title}', 'cover.none': '尚無計畫',
     'places.open': '在 Google 地圖開啟', 'places.event': '活動',
     'place.addTitle': '新增地點', 'place.editTitle': '編輯地點', 'place.link': 'Google 地圖分享連結',
@@ -334,6 +337,7 @@ const DICT = {
     'places.search': '搜索地点…', 'places.add': '添加地点', 'places.all': '全部地点',
     'places.none': '未分类', 'places.empty': '这里没有地点。',
     'places.emptyTitle': '开始建立地图', 'places.emptyAll': '在 Google 地图中打开地点，点击“分享”复制链接，然后粘贴到这里。', skip: '跳到主要内容',
+    'places.direct': '“{name}”的其他地点', 'places.results': '搜索结果',
     'cover.next': '下次：{title}', 'cover.none': '暂无计划',
     'places.open': '在 Google 地图中打开', 'places.event': '活动',
     'place.addTitle': '添加地点', 'place.editTitle': '编辑地点', 'place.link': 'Google 地图分享链接',
@@ -415,7 +419,9 @@ const i18n = {
   get lang() { return lang; },
   get locale() { return LANGS.find((l) => l.code === lang).locale; },
   t(key, vars = {}) {
-    const s = DICT[lang][key] ?? DICT.en[key] ?? key;
+    // Optional singular form: 'key_one' is used when n === 1 (only English needs it)
+    const one = vars.n === 1 ? DICT[lang][key + '_one'] : undefined;
+    const s = one ?? DICT[lang][key] ?? DICT.en[key] ?? key;
     return s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
   },
   set(code) {

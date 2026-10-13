@@ -246,11 +246,46 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
   border: none; background: transparent; text-align: left; padding: .45rem .7rem; font-weight: 500; color: var(--muted);
 }
 .cat-tree button:hover { color: var(--text); background: var(--surface-2); }
-.cat-tree button.child { padding-left: 1.7rem; font-size: .92rem; font-weight: 400; }
+.cat-tree .lbl { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; }
+.cat-tree .chev { color: var(--faint); transition: transform .25s var(--ease); }
+.cat-tree .chev-gap { width: 1em; flex: none; }
+.cat-tree button[aria-expanded="true"] .chev { transform: rotate(90deg); color: var(--accent); }
+.cat-tree .kids { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 .35rem 1.15rem; padding-left: .45rem;
+                  border-left: 1px solid var(--border); animation: unfold .28s var(--ease) both; }
+.cat-tree button.child { padding-left: .7rem; font-size: .92rem; font-weight: 400; }
+@keyframes unfold { from { opacity: 0; transform: translateY(-4px); } }
 .cat-tree button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--border); }
 .cat-tree button.active .count { color: var(--accent); }
 .cat-tree .count { color: var(--faint); font-size: .8rem; font-variant-numeric: tabular-nums; }
-.place-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: .9rem; align-items: start; }
+.place-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: .9rem; align-items: start; }
+
+/* Breadcrumb + category tiles (drill-down: main category → sub-category → places) */
+.crumbs { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 2rem; margin-bottom: .6rem; }
+.crumb-trail { display: flex; align-items: center; flex-wrap: wrap; gap: .15rem; min-width: 0; font-size: 1.35rem; font-weight: 600; letter-spacing: -.02em; }
+.crumb-trail .sep { color: var(--faint); margin: 0 .1rem; }
+.crumb { border: 0; background: none; padding: .1rem .3rem; margin: 0 -.1rem; font: inherit; font-weight: 500; color: var(--muted); }
+.crumb:hover { background: var(--surface-2); color: var(--text); }
+.crumb.current { color: var(--text); padding: .1rem .2rem; }
+.crumb-all { border: 0; background: none; padding: .3rem .5rem; color: var(--accent); font-size: .88rem; }
+.crumb-all:hover { background: var(--accent-soft); }
+.crumb-all .count, .crumb-all:hover .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .9rem; }
+.cat-tile {
+  min-height: 150px; padding: .95rem 1.1rem 1.05rem; border: 0; border-radius: var(--r-lg);
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto auto; justify-content: stretch; align-items: stretch;
+  gap: .2rem; text-align: left; font-weight: 400; white-space: normal;
+  box-shadow: var(--shadow-sm); transition: transform .25s var(--ease), box-shadow .25s var(--ease);
+  animation: rise .4s var(--ease) both;
+}
+.cat-tile:nth-child(2) { animation-delay: 40ms; } .cat-tile:nth-child(3) { animation-delay: 80ms; }
+.cat-tile:nth-child(4) { animation-delay: 120ms; } .cat-tile:nth-child(n+5) { animation-delay: 160ms; }
+.cat-tile:hover { background: var(--cv-grad); border-color: transparent; transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.cat-tile:hover .topo { transform: scale(1.05); }
+.cat-tile:hover .go { opacity: 1; transform: translateX(3px); }
+.cat-tile .tile-name { align-self: end; font-size: 1.45rem; font-weight: 650; line-height: 1.15; letter-spacing: -.025em; text-wrap: balance; }
+.cat-tile .tile-subs { font-size: .82rem; opacity: .75; min-height: 1.2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-head { margin: 2rem 0 .8rem; font-size: 1rem; color: var(--muted); font-weight: 600; }
+.cat-tiles + .place-grid { margin-top: 1.5rem; }
 .place-card {
   position: relative; display: flex; flex-direction: column; gap: .4rem;
   background: var(--surface); border-radius: var(--r-md);
@@ -281,12 +316,15 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
   --cv-line: hsl(var(--h) var(--s) 50%);
   --cv-ink: hsl(var(--h) calc(var(--s) + 12%) 16%);
   --cv-chip: hsl(var(--h) 30% 99% / .74);
+  --cv-grad: radial-gradient(130% 100% at 85% 10%, var(--cv-bg) 0%, var(--cv-bg2) 100%);
   position: relative; isolation: isolate; overflow: hidden;
   display: grid; grid-template-rows: auto 1fr auto; gap: .55rem;
+  background: var(--cv-grad);
+  color: var(--cv-ink);
+}
+.place-card > .cover {
   min-height: 176px; margin: -1.05rem -1.1rem .85rem; padding: .85rem 1rem 1rem;
   border-radius: var(--r-md) var(--r-md) 0 0;
-  background: radial-gradient(130% 100% at 85% 10%, var(--cv-bg) 0%, var(--cv-bg2) 100%);
-  color: var(--cv-ink);
 }
 .hue-0 { --h: 172; --s: 26%; }
 .hue-1 { --h: 128; --s: 18%; }
@@ -486,11 +524,13 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
   .lang-select { max-width: 6.5rem; padding-left: .4rem; }
   .tabs button { padding: .45rem .7rem; }
   .places-layout { grid-template-columns: 1fr; gap: 1rem; }
-  .cat-tree { position: static; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: .35rem; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 2px; }
-  .cat-tree button, .cat-tree button.child { width: auto; flex: none; padding: .35rem .75rem; gap: .45rem;
-    box-shadow: inset 0 0 0 1px var(--border); }
+  .cat-tree { display: none; }
+  .crumb-trail { font-size: 1.15rem; }
+  .cat-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .cat-tile { min-height: 124px; padding: .8rem .85rem .9rem; }
+  .cat-tile .tile-name { font-size: 1.15rem; }
   .cal-title { font-size: 1.2rem; }
-  .cover { min-height: 156px; }
+  .place-card > .cover { min-height: 156px; }
   .cover .name { font-size: 1.25rem; }
   .cal-day { min-height: 68px; padding: .2rem; }
   .cal-head { padding: .4rem .3rem; text-align: center; }
