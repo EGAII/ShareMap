@@ -61,8 +61,10 @@ function toast(msg, isError = false) {
 }
 function check({ error, data }) {
   if (error) {
-    const limit = /PLACE_DAILY_LIMIT (\d+)/.exec(error.message || '');
-    toast(limit ? t('place.limit', { n: Number(limit[1]) }) : error.message, true);
+    const msg = error.message || '';
+    const limit = /PLACE_DAILY_LIMIT (\d+)/.exec(msg);
+    toast(limit ? t('place.limit', { n: Number(limit[1]) })
+      : msg.includes('BANNED_FROM_ORG') ? t('org.banned') : msg, true);
     throw error;
   }
   return data;
@@ -128,7 +130,6 @@ const state = {
   parts: new Map(),     // event_id -> participant rows (ordered)
   series: new Map(),    // series_id -> series row
   mySubs: new Set(),    // series ids I auto-join
-  isOrganizer: false,   // I have created an event in this organization
   next: new Map(),      // place_id -> next upcoming event (for place covers)
   nextCount: new Map(), // place_id -> number of upcoming events
   nextSig: '',
@@ -367,7 +368,7 @@ function placesLeftToday() {
   if (isAdmin()) return null;
   const today = tokyoDay(Date.now());
   const used = state.places.filter((p) => p.created_by === state.user.id && tokyoDay(p.created_at) === today).length;
-  return Math.max(0, (state.isOrganizer ? 2 : 1) - used);
+  return Math.max(0, (myMember()?.organizer ? 2 : 1) - used);
 }
 const fmtStamp = (s) => new Date(s).toLocaleString(i18n.locale,
   { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -455,17 +456,15 @@ async function createOrg(name) {
 
 async function loadBase() {
   const org = state.orgId;
-  const [cats, places, members, mySeries] = await Promise.all([
+  const [cats, places, members] = await Promise.all([
     sb.from('categories').select('*').eq('org_id', org).order('sort_order').order('name'),
     sb.from('places').select('*').eq('org_id', org).order('name'),
-    sb.from('org_members').select('user_id, role, joined_at, can_create, can_join, profiles(display_name)').eq('org_id', org).order('joined_at'),
-    sb.from('event_series').select('id', { count: 'exact', head: true }).eq('org_id', org).eq('created_by', state.user.id),
+    sb.from('org_members').select('user_id, role, joined_at, organizer, can_create, can_join, profiles(display_name)').eq('org_id', org).order('joined_at'),
   ]);
   if (org !== state.orgId) return;   // switched organization meanwhile
   state.categories = check(cats);
   state.places = check(places);
   state.members = check(members);
-  state.isOrganizer = (mySeries.count || 0) > 0;
   await loadNext().catch(() => {});
 }
 // Place covers show the next event; refetch after any change to events
@@ -479,10 +478,10 @@ $('#tabs').addEventListener('click', (e) => {
   if (b) switchView(b.dataset.view);
 });
 function switchView(v) {
-  if (!['places', 'calendar', 'categories', 'org'].includes(v)) v = 'places';
-  // Only the owner manages categories; others don't see the tab
-  $('#tabs button[data-view="categories"]').hidden = !isAdmin();
-  if (v === 'categories' && !isAdmin()) v = 'places';
+  if (!['places', 'calendar', 'categories', 'org', 'admin'].includes(v)) v = 'places';
+  // Only the owner manages categories and permissions; others don't see these tabs
+  $$('#tabs [data-owner-only]').forEach((b) => { b.hidden = !isAdmin(); });
+  if ((v === 'categories' || v === 'admin') && !isAdmin()) v = 'places';
   state.view = v;
   store.set('fsm.view', v);
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
@@ -494,6 +493,7 @@ async function render() {
   else if (state.view === 'calendar') await renderCalendar();
   else if (state.view === 'categories') renderCategories();
   else if (state.view === 'org') renderOrgPage();
+  else if (state.view === 'admin') await renderAdmin();
 }
 // Pick up others' changes when coming back to the tab, but not on every click into the window
 let lastRefresh = Date.now();
@@ -813,7 +813,7 @@ $('#place-list').addEventListener('click', (e) => {
 
 function placeForm(place = null) {
   const left = place ? null : placesLeftToday();
-  if (left === 0) return toast(t('place.limit', { n: state.isOrganizer ? 2 : 1 }), true);
+  if (left === 0) return toast(t('place.limit', { n: myMember()?.organizer ? 2 : 1 }), true);
   const preCat = place ? place.category_id
     : (/^\d+$/.test(String(state.selectedCat)) ? Number(state.selectedCat) : null);
   const body = openModal(`
@@ -945,6 +945,13 @@ async function copy(text) {
   catch { prompt('', text); }
 }
 
+function memberBadges(m) {
+  if (m.role === 'owner') return `<span class="role">${esc(t('org.owner'))}</span>`;
+  return (m.organizer ? `<span class="role">${esc(t('perm.organizer'))}</span>` : '')
+    + (m.can_create ? '' : `<span class="badge wait">${esc(t('perm.noCreate'))}</span>`)
+    + (m.can_join ? '' : `<span class="badge wait">${esc(t('perm.noJoin'))}</span>`);
+}
+
 function renderOrgPage() {
   const org = currentOrg();
   const owner = org.role === 'owner';
@@ -958,13 +965,8 @@ function renderOrgPage() {
   $('#member-list').innerHTML = state.members.map((m) => {
     const me = m.user_id === state.user.id;
     const name = m.profiles?.display_name || '?';
-    const limits = (m.can_create ? '' : `<span class="badge wait">${esc(t('perm.noCreate'))}</span>`)
-      + (m.can_join ? '' : `<span class="badge wait">${esc(t('perm.noJoin'))}</span>`);
-    const perm = (k, label) => `<label class="checkline small"><input type="checkbox" data-perm="${k}" data-user="${m.user_id}" ${m[k] ? 'checked' : ''}> ${esc(t(label))}</label>`;
     return `<li><span class="who-line">${avatar(name)}<span>${esc(name)}${me ? ` <span class="muted">${esc(t('fam.you'))}</span>` : ''}${
-        m.role === 'owner' ? `<span class="role">${esc(t('org.owner'))}</span>` : ''}${owner ? '' : limits}</span></span>
-      ${owner && m.role !== 'owner' ? `<span class="perms">${perm('can_create', 'perm.create')}${perm('can_join', 'perm.join')}</span>` : ''}
-      ${owner && !me ? `<button class="small danger" data-remove-member="${m.user_id}">${esc(t('remove'))}</button>` : ''}</li>`;
+        memberBadges(m)}</span></span></li>`;
   }).join('');
   $('#my-orgs').innerHTML = state.orgs.map((o) => `
     <li><span class="who-line">${avatar(o.name)}<span>${esc(o.name)}${o.role === 'owner' ? `<span class="role">${esc(t('org.owner'))}</span>` : ''}</span></span>
@@ -996,17 +998,47 @@ $('#my-orgs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-switch-org]');
   if (b) enterOrg(Number(b.dataset.switchOrg));
 });
-$('#member-list').addEventListener('change', async (e) => {
+// ---------------------------------------------------------------------
+// Permissions page (owner only)
+// ---------------------------------------------------------------------
+async function renderAdmin() {
+  const L = (k, v) => esc(t(k, v));
+  const perm = (m, k, label) => `<label class="checkline small"><input type="checkbox" data-perm="${k}" data-user="${m.user_id}" ${m[k] ? 'checked' : ''}> ${L(label)}</label>`;
+  $('#admin-list').innerHTML = state.members.map((m) => {
+    const name = m.profiles?.display_name || '?';
+    const head = `<span class="who-line">${avatar(name)}<span>${esc(name)}${memberBadges(m)}
+      <span class="muted small block">${L('admin.joined', { date: fmtYmd(m.joined_at.slice(0, 10)) })}</span></span></span>`;
+    if (m.role === 'owner') return `<li>${head}</li>`;
+    return `<li>${head}
+      <span class="perms">${perm(m, 'organizer', 'perm.organizer')}${perm(m, 'can_create', 'perm.create')}${perm(m, 'can_join', 'perm.join')}</span>
+      <span class="btn-row tight">
+        <button class="small" data-kick="${m.user_id}">${L('admin.kick')}</button>
+        <button class="small danger" data-ban="${m.user_id}">${L('admin.ban')}</button>
+      </span></li>`;
+  }).join('');
+  $('#ban-list').innerHTML = skeletons('row-sk', 1);
+  const org = state.orgId;
+  const bans = check(await sb.from('org_bans').select('*').eq('org_id', org).order('banned_at', { ascending: false }));
+  if (org !== state.orgId || state.view !== 'admin') return;
+  $('#ban-list').innerHTML = bans.map((b) => `
+    <li><span class="who-line">${avatar(b.display_name)}<span>${esc(b.display_name || '?')}
+      <span class="muted small block">${L('admin.bannedAt', { time: fmtStamp(b.banned_at) })}</span></span></span>
+      <button class="small" data-unban="${b.user_id}">${L('admin.unban')}</button></li>`).join('')
+    || `<li class="muted">${L('admin.noBans')}</li>`;
+}
+
+$('#admin-list').addEventListener('change', async (e) => {
   const box = e.target.closest('[data-perm]');
   if (!box) return;
   const m = state.members.find((x) => x.user_id === box.dataset.user);
-  const next = { can_create: m.can_create, can_join: m.can_join, [box.dataset.perm]: box.checked };
+  const next = { organizer: m.organizer, can_create: m.can_create, can_join: m.can_join, [box.dataset.perm]: box.checked };
   box.disabled = true;
   try {
-    check(await sb.rpc('set_member_permissions',
-      { p_org: state.orgId, p_user: m.user_id, p_can_create: next.can_create, p_can_join: next.can_join }));
+    check(await sb.rpc('set_member_permissions', { p_org: state.orgId, p_user: m.user_id,
+      p_organizer: next.organizer, p_can_create: next.can_create, p_can_join: next.can_join }));
     Object.assign(m, next);
     toast(t('perm.saved'));
+    renderAdmin();
   } catch (err) {
     box.checked = !box.checked;
     console.error(err);
@@ -1014,14 +1046,27 @@ $('#member-list').addEventListener('change', async (e) => {
     box.disabled = false;
   }
 });
-$('#member-list').addEventListener('click', async (e) => {
-  const b = e.target.closest('[data-remove-member]');
+$('#admin-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-kick], [data-ban]');
   if (!b) return;
-  const m = state.members.find((x) => x.user_id === b.dataset.removeMember);
-  if (!confirm(t('org.removeConfirm', { name: m.profiles?.display_name || '' }))) return;
-  check(await sb.from('org_members').delete().eq('org_id', state.orgId).eq('user_id', m.user_id));
+  const id = b.dataset.kick || b.dataset.ban;
+  const name = state.members.find((x) => x.user_id === id)?.profiles?.display_name || '';
+  if (b.dataset.kick) {
+    if (!confirm(t('org.removeConfirm', { name }))) return;
+    check(await sb.from('org_members').delete().eq('org_id', state.orgId).eq('user_id', id));
+  } else {
+    if (!confirm(t('admin.banConfirm', { name }))) return;
+    check(await sb.rpc('ban_member', { p_org: state.orgId, p_user: id }));
+  }
   await loadBase();
-  renderOrgPage();
+  renderAdmin();
+});
+$('#ban-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-unban]');
+  if (!b) return;
+  check(await sb.rpc('unban_member', { p_org: state.orgId, p_user: b.dataset.unban }));
+  toast(t('admin.unbanned'));
+  renderAdmin();
 });
 $('#org-leave').addEventListener('click', async () => {
   const org = currentOrg();
@@ -1320,7 +1365,6 @@ function eventForm({ placeId = null, date = null } = {}) {
     try {
       const series = check(await sb.from('event_series').insert(row).select().single());
       if (f.autojoin.checked) check(await sb.from('series_subscribers').insert({ series_id: series.id }));
-      state.isOrganizer = true;
       eventsChanged();
       closeModal();
       toast(t(freq === 'none' ? 'ev.created' : 'ev.createdRepeat'));

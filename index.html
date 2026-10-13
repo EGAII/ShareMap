@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@500;600&display=swap">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
   <!-- Icon set (stroke icons, 1.75 weight) -->
@@ -65,8 +65,9 @@
     <nav class="tabs" id="tabs" aria-label="Sections">
       <button data-view="places" class="active" data-i18n="nav.places"></button>
       <button data-view="calendar" data-i18n="nav.calendar"></button>
-      <button data-view="categories" data-i18n="nav.categories"></button>
+      <button data-view="categories" data-i18n="nav.categories" data-owner-only hidden></button>
       <button data-view="org" data-i18n="nav.org"></button>
+      <button data-view="admin" data-i18n="nav.admin" data-owner-only hidden></button>
     </nav>
     <div class="topbar-end">
       <button class="ghost icon install-btn" data-i18n-title="install.btn"><svg class="ic"><use href="#i-phone-add"/></svg></button>
@@ -167,6 +168,21 @@
       </div>
     </section>
 
+    <!-- Permissions (owner only) -->
+    <section class="view" id="view-admin" hidden>
+      <div class="page-head"><h1 data-i18n="admin.title"></h1></div>
+      <p class="muted" data-i18n="admin.intro"></p>
+      <div class="card">
+        <h2 data-i18n="admin.members"></h2>
+        <ul id="admin-list" class="plain-list admin-list"></ul>
+      </div>
+      <div class="card">
+        <h2 data-i18n="admin.bans"></h2>
+        <p class="muted small" data-i18n="admin.bansNote"></p>
+        <ul id="ban-list" class="plain-list"></ul>
+      </div>
+    </section>
+
     <!-- Organization & members -->
     <section class="view" id="view-org" hidden>
       <div class="org-head">
@@ -230,7 +246,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="js/config.js"></script>
-  <script src="js/i18n.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/i18n.js?v=4"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

@@ -20,8 +20,7 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   Click the time to jump to that event. No external image service, no cost.
 - **Categories**: two levels (main category → sub-category), e.g. `Food › Ramen`. Only the organization's owner
   can add, rename or delete them; other members don't see the Categories tab.
-- **Adding places**: each member can add 1 place a day (Japan time), or 2 a day once they have created an event.
-  The owner has no limit. A place can be edited or deleted only by the person who added it, or by the owner.
+- **Adding places**: each member can add 1 place a day (Japan time); organizers can add 2. The owner has no limit. A place can be edited or deleted only by the person who added it, or by the owner.
 - **Calendar**: pick a place from the list and create an event.
   - **Repeat**: weekly (choose weekdays, every N weeks), daily, or monthly, with an optional end date.
     A Supabase cron job runs every night and keeps creating dates 90 days ahead.
@@ -35,8 +34,9 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
     create / edit / cancel / delete by the organizer. *History* on the calendar shows the whole
     organization's record, including deleted events. The record is written by the database itself and
     nobody, the owner included, can change or delete it.
-- **Owner controls**: the organization's owner can remove anyone's sign-up, and on the **Members** page can
-  turn off *Can create events* or *Can join events* for any member.
+- **Owner controls**: the organization's owner can remove anyone's sign-up. On the **Permissions** page (only the
+  owner sees it) the owner can make a member an *Organizer*, turn off *Can create events* or *Can join events*,
+  remove someone from the group, or **ban** them so they can never rejoin (until unbanned).
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).
 - **Add to home screen**: a button in the top bar (and on the sign-in screen) shows how to add ShareMap to an
   iPhone or Android home screen; it then opens like an app with its own icon.

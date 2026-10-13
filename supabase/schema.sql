@@ -58,6 +58,18 @@ create index if not exists org_members_user_idx on public.org_members(user_id);
 -- The owner can stop a member from creating events or from joining them.
 alter table public.org_members add column if not exists can_create boolean not null default true;
 alter table public.org_members add column if not exists can_join   boolean not null default true;
+-- "Organizer": granted by the owner; may add 2 places a day instead of 1.
+alter table public.org_members add column if not exists organizer  boolean not null default false;
+
+-- People the owner banned for good: removed and cannot join again.
+create table if not exists public.org_bans (
+  org_id       bigint not null references public.organizations(id) on delete cascade,
+  user_id      uuid   not null,
+  display_name text   not null default '',
+  banned_by    uuid,
+  banned_at    timestamptz not null default now(),
+  primary key (org_id, user_id)
+);
 
 create or replace function public.is_org_member(p_org bigint) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -125,6 +137,9 @@ begin
   select * into o from public.organizations
   where invite_code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
   if o.id is null then raise exception 'Invalid invite code'; end if;
+  if exists (select 1 from public.org_bans where org_id = o.id and user_id = auth.uid()) then
+    raise exception 'BANNED_FROM_ORG';
+  end if;
   insert into public.org_members(org_id, user_id) values (o.id, auth.uid()) on conflict do nothing;
   return o;
 end $$;
@@ -139,14 +154,35 @@ begin
   return code;
 end $$;
 
-create or replace function public.set_member_permissions(p_org bigint, p_user uuid, p_can_create boolean, p_can_join boolean)
-returns void
+drop function if exists public.set_member_permissions(bigint, uuid, boolean, boolean);
+create or replace function public.set_member_permissions(
+  p_org bigint, p_user uuid, p_organizer boolean, p_can_create boolean, p_can_join boolean
+) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_org_owner(p_org) then raise exception 'Only the owner can do this'; end if;
-  update public.org_members set can_create = p_can_create, can_join = p_can_join
+  update public.org_members set organizer = p_organizer, can_create = p_can_create, can_join = p_can_join
    where org_id = p_org and user_id = p_user and role <> 'owner';
   if not found then raise exception 'The owner cannot be restricted'; end if;
+end $$;
+
+-- Remove a member and stop them from ever joining again (until unbanned).
+create or replace function public.ban_member(p_org bigint, p_user uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_org_owner(p_org) then raise exception 'Only the owner can do this'; end if;
+  if p_user = auth.uid() then raise exception 'You cannot ban yourself'; end if;
+  insert into public.org_bans(org_id, user_id, display_name, banned_by)
+  values (p_org, p_user, coalesce((select display_name from public.profiles where id = p_user), ''), auth.uid())
+  on conflict do nothing;
+  delete from public.org_members where org_id = p_org and user_id = p_user;
+end $$;
+
+create or replace function public.unban_member(p_org bigint, p_user uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_org_owner(p_org) then raise exception 'Only the owner can do this'; end if;
+  delete from public.org_bans where org_id = p_org and user_id = p_user;
 end $$;
 
 -- When someone leaves: delete empty orgs, and make sure an owner remains.
@@ -158,7 +194,7 @@ begin
   elsif not exists (select 1 from public.org_members where org_id = old.org_id) then
     delete from public.organizations where id = old.org_id;
   elsif not exists (select 1 from public.org_members where org_id = old.org_id and role = 'owner') then
-    update public.org_members set role = 'owner', can_create = true, can_join = true
+    update public.org_members set role = 'owner', can_create = true, can_join = true, organizer = true
     where (org_id, user_id) = (
       select org_id, user_id from public.org_members where org_id = old.org_id order by joined_at limit 1);
   end if;
@@ -171,9 +207,11 @@ create trigger member_removed
   for each row execute function public.on_member_removed();
 
 revoke execute on function public.create_organization(text), public.join_organization(text),
-  public.regenerate_invite_code(bigint), public.set_member_permissions(bigint, uuid, boolean, boolean) from public, anon;
+  public.regenerate_invite_code(bigint), public.set_member_permissions(bigint, uuid, boolean, boolean, boolean),
+  public.ban_member(bigint, uuid), public.unban_member(bigint, uuid) from public, anon;
 grant execute on function public.create_organization(text), public.join_organization(text),
-  public.regenerate_invite_code(bigint), public.set_member_permissions(bigint, uuid, boolean, boolean),
+  public.regenerate_invite_code(bigint), public.set_member_permissions(bigint, uuid, boolean, boolean, boolean),
+  public.ban_member(bigint, uuid), public.unban_member(bigint, uuid),
   public.is_org_member(bigint), public.is_org_owner(bigint), public.can_create_in(bigint), public.can_join_in(bigint)
   to authenticated;
 
@@ -231,13 +269,13 @@ create table if not exists public.places (
 );
 create index if not exists places_org_idx on public.places(org_id);
 
--- Places a member may add per day (Japan time): 1, or 2 for members who have
--- created an event. null = no limit (the owner).
+-- Places a member may add per day (Japan time): 1, or 2 for organizers.
+-- null = no limit (the owner).
 create or replace function public.place_daily_limit(p_org bigint) returns int
 language plpgsql stable security definer set search_path = public as $$
 begin
   if public.is_org_owner(p_org) then return null; end if;
-  if exists (select 1 from public.event_series where org_id = p_org and created_by = auth.uid()) then return 2; end if;
+  if exists (select 1 from public.org_members where org_id = p_org and user_id = auth.uid() and organizer) then return 2; end if;
   return 1;
 end $$;
 
@@ -653,6 +691,7 @@ alter table public.events             enable row level security;
 alter table public.event_participants enable row level security;
 alter table public.series_subscribers enable row level security;
 alter table public.event_log          enable row level security;
+alter table public.org_bans           enable row level security;
 
 do $$
 declare r record;
@@ -661,7 +700,7 @@ begin
     select policyname, tablename from pg_policies
     where schemaname = 'public'
       and tablename in ('profiles','organizations','org_members','categories','places','event_series',
-                        'events','event_participants','series_subscribers','event_log')
+                        'events','event_participants','series_subscribers','event_log','org_bans')
   loop
     execute format('drop policy %I on public.%I', r.policyname, r.tablename);
   end loop;
@@ -683,6 +722,9 @@ create policy org_delete on public.organizations for delete to authenticated usi
 create policy om_select on public.org_members for select to authenticated using (public.is_org_member(org_id));
 create policy om_delete on public.org_members for delete to authenticated
   using (user_id = auth.uid() or public.is_org_owner(org_id));
+
+-- bans: only the owner sees the list; changed through ban_member / unban_member
+create policy ob_select on public.org_bans for select to authenticated using (public.is_org_owner(org_id));
 
 -- categories: members read, only the owner adds, renames or deletes
 create policy cat_select on public.categories for select to authenticated using (public.is_org_member(org_id));

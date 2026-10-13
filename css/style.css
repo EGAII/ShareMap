@@ -590,3 +590,9 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
 }
 .card > .inline:first-child { margin-top: 0; }
 .who-line .badge { margin-left: .4rem; }
+
+/* Permissions page */
+.block { display: block; margin-top: .1rem; }
+.admin-list li { align-items: flex-start; }
+.admin-list .perms { margin-left: 0; flex: 1 1 260px; }
+.btn-row.tight { margin-top: 0; gap: .4rem; }
