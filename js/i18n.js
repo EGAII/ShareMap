@@ -77,7 +77,7 @@ const DICT = {
     'fam.you': '(you)',
 
     'ev.new': 'New event', 'ev.place': 'Place', 'ev.selectPlace': '— Select a place —', 'ev.title': 'Title',
-    'ev.date': 'Date', 'ev.start': 'Start', 'ev.length': 'Length (min)', 'ev.repeat': 'Repeat',
+    'ev.date': 'Date', 'ev.start': 'Start', 'ev.end': 'End', 'ev.repeat': 'Repeat',
     'rep.none': 'Does not repeat', 'rep.weekly': 'Weekly', 'rep.daily': 'Daily', 'rep.monthly': 'Monthly (same day)',
     'ev.every': 'Every', 'ev.on': 'On', 'ev.until': 'Repeat until',
     'ev.limit': 'People limit', 'ev.limitPh': 'No limit',
@@ -85,6 +85,7 @@ const DICT = {
     'ev.joining': "I'm joining", 'ev.everyTime': '(every time)',
     'ev.needPlace': 'Add a place first.', 'ev.pickWeekday': 'Pick at least one weekday',
     'ev.untilBefore': '“Repeat until” is before the start date',
+    'ev.sameTime': 'End time is the same as the start time',
     'ev.created': 'Event created', 'ev.createdRepeat': 'Repeating event created',
 
     'rt.none': 'Does not repeat', 'rt.daily1': 'Every day', 'rt.dailyN': 'Every {n} days',
@@ -181,7 +182,7 @@ const DICT = {
     'fam.you': '（あなた）',
 
     'ev.new': '新規イベント', 'ev.place': 'スポット', 'ev.selectPlace': '— スポットを選択 —', 'ev.title': 'タイトル',
-    'ev.date': '日付', 'ev.start': '開始', 'ev.length': '長さ（分）', 'ev.repeat': '繰り返し',
+    'ev.date': '日付', 'ev.start': '開始', 'ev.end': '終了', 'ev.repeat': '繰り返し',
     'rep.none': '繰り返さない', 'rep.weekly': '毎週', 'rep.daily': '毎日', 'rep.monthly': '毎月（同じ日）',
     'ev.every': '間隔', 'ev.on': '曜日', 'ev.until': '終了日',
     'ev.limit': '定員', 'ev.limitPh': '無制限',
@@ -189,6 +190,7 @@ const DICT = {
     'ev.joining': '自分も参加する', 'ev.everyTime': '（毎回）',
     'ev.needPlace': '先にスポットを追加してください。', 'ev.pickWeekday': '曜日を1つ以上選んでください',
     'ev.untilBefore': '終了日が開始日より前です',
+    'ev.sameTime': '終了時刻が開始時刻と同じです',
     'ev.created': 'イベントを作成しました', 'ev.createdRepeat': '繰り返しイベントを作成しました',
 
     'rt.none': '繰り返しなし', 'rt.daily1': '毎日', 'rt.dailyN': '{n}日ごと',
@@ -285,7 +287,7 @@ const DICT = {
     'fam.you': '（你）',
 
     'ev.new': '新增活動', 'ev.place': '地點', 'ev.selectPlace': '— 選擇地點 —', 'ev.title': '標題',
-    'ev.date': '日期', 'ev.start': '開始', 'ev.length': '長度（分鐘）', 'ev.repeat': '重複',
+    'ev.date': '日期', 'ev.start': '開始', 'ev.end': '結束', 'ev.repeat': '重複',
     'rep.none': '不重複', 'rep.weekly': '每週', 'rep.daily': '每天', 'rep.monthly': '每月（同一天）',
     'ev.every': '間隔', 'ev.on': '星期', 'ev.until': '重複至',
     'ev.limit': '人數上限', 'ev.limitPh': '不限',
@@ -293,6 +295,7 @@ const DICT = {
     'ev.joining': '我要參加', 'ev.everyTime': '（每次）',
     'ev.needPlace': '請先新增地點。', 'ev.pickWeekday': '請至少選擇一個星期',
     'ev.untilBefore': '「重複至」早於開始日期',
+    'ev.sameTime': '結束時間與開始時間相同',
     'ev.created': '已建立活動', 'ev.createdRepeat': '已建立重複活動',
 
     'rt.none': '不重複', 'rt.daily1': '每天', 'rt.dailyN': '每 {n} 天',
@@ -389,7 +392,7 @@ const DICT = {
     'fam.you': '（你）',
 
     'ev.new': '新建活动', 'ev.place': '地点', 'ev.selectPlace': '— 选择地点 —', 'ev.title': '标题',
-    'ev.date': '日期', 'ev.start': '开始', 'ev.length': '时长（分钟）', 'ev.repeat': '重复',
+    'ev.date': '日期', 'ev.start': '开始', 'ev.end': '结束', 'ev.repeat': '重复',
     'rep.none': '不重复', 'rep.weekly': '每周', 'rep.daily': '每天', 'rep.monthly': '每月（同一天）',
     'ev.every': '间隔', 'ev.on': '星期', 'ev.until': '重复至',
     'ev.limit': '人数上限', 'ev.limitPh': '不限',
@@ -397,6 +400,7 @@ const DICT = {
     'ev.joining': '我要参加', 'ev.everyTime': '（每次）',
     'ev.needPlace': '请先添加地点。', 'ev.pickWeekday': '请至少选择一个星期',
     'ev.untilBefore': '“重复至”早于开始日期',
+    'ev.sameTime': '结束时间与开始时间相同',
     'ev.created': '活动已创建', 'ev.createdRepeat': '重复活动已创建',
 
     'rt.none': '不重复', 'rt.daily1': '每天', 'rt.dailyN': '每 {n} 天',

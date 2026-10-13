@@ -1188,7 +1188,7 @@ function eventForm({ placeId = null, date = null } = {}) {
       <div class="row">
         <div class="field"><label>${L('ev.date')}</label><input type="date" name="start_date" required value="${d}"></div>
         <div class="field"><label>${L('ev.start')}</label><input type="time" name="start_time" required value="10:00"></div>
-        <div class="field"><label>${L('ev.length')}</label><input type="number" name="duration" min="5" step="5" value="120" required></div>
+        <div class="field"><label>${L('ev.end')}</label><input type="time" name="end_time" required value="12:00"></div>
       </div>
       <div class="row">
         <div class="field"><label>${L('ev.repeat')}</label>
@@ -1221,6 +1221,18 @@ function eventForm({ placeId = null, date = null } = {}) {
   };
   f.freq.addEventListener('change', sync);
   f.start_date.addEventListener('change', sync);
+  // Minutes from start to end; an end earlier than the start means the next day.
+  const toMin = (v) => { const [h, m] = v.split(':').map(Number); return h * 60 + m; };
+  const duration = () => (toMin(f.end_time.value) - toMin(f.start_time.value) + 1440) % 1440;
+  // Moving the start keeps the same length by moving the end with it.
+  let lastStart = f.start_time.value;
+  f.start_time.addEventListener('change', () => {
+    if (!f.start_time.value || !f.end_time.value || !lastStart) { lastStart = f.start_time.value; return; }
+    const len = (toMin(f.end_time.value) - toMin(lastStart) + 1440) % 1440;
+    const end = (toMin(f.start_time.value) + len) % 1440;
+    f.end_time.value = `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+    lastStart = f.start_time.value;
+  });
   f.place_id.addEventListener('change', () => {
     const p = state.places.find((x) => x.id === Number(f.place_id.value));
     if (p && (!f.title.value || state.places.some((x) => x.name === f.title.value))) f.title.value = p.name;
@@ -1235,6 +1247,7 @@ function eventForm({ placeId = null, date = null } = {}) {
     if (freq !== 'none' && f.until_date.value && f.until_date.value < f.start_date.value) {
       return toast(t('ev.untilBefore'), true);
     }
+    if (!duration()) return toast(t('ev.sameTime'), true);
     const row = {
       org_id: state.orgId,
       place_id: Number(f.place_id.value),
@@ -1242,7 +1255,7 @@ function eventForm({ placeId = null, date = null } = {}) {
       description: f.description.value.trim(),
       start_date: f.start_date.value,
       start_time: f.start_time.value,
-      duration_minutes: Number(f.duration.value),
+      duration_minutes: duration(),
       timezone: TZ,
       freq,
       interval_n: freq === 'none' ? 1 : Number(f.interval_n.value || 1),
