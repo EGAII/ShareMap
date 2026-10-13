@@ -1,0 +1,543 @@
+-- =====================================================================
+-- ShareMap — Supabase schema (multi-organization)
+-- Run this whole file once in Supabase Dashboard → SQL Editor → New query.
+-- =====================================================================
+
+create extension if not exists pg_cron;
+
+-- How many days ahead recurring events are generated.
+create or replace function public.event_horizon_days() returns int
+language sql immutable as $$ select 90 $$;
+
+-- ---------------------------------------------------------------------
+-- Profiles (display names)
+-- ---------------------------------------------------------------------
+create table if not exists public.profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  display_name text not null default '',
+  created_at   timestamptz not null default now()
+);
+
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles(id, display_name)
+  values (new.id, split_part(new.email, '@', 1))
+  on conflict do nothing;
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+insert into public.profiles(id, display_name)
+select id, split_part(email, '@', 1) from auth.users
+on conflict do nothing;
+
+-- ---------------------------------------------------------------------
+-- Organizations & members
+-- ---------------------------------------------------------------------
+create table if not exists public.organizations (
+  id          bigint generated always as identity primary key,
+  name        text not null check (length(trim(name)) > 0),
+  invite_code text not null unique,
+  created_by  uuid references public.profiles(id) on delete set null,
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.org_members (
+  org_id    bigint not null references public.organizations(id) on delete cascade,
+  user_id   uuid   not null references public.profiles(id) on delete cascade,
+  role      text   not null default 'member' check (role in ('owner','member')),
+  joined_at timestamptz not null default now(),
+  primary key (org_id, user_id)
+);
+create index if not exists org_members_user_idx on public.org_members(user_id);
+
+create or replace function public.is_org_member(p_org bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.org_members where org_id = p_org and user_id = auth.uid());
+$$;
+
+create or replace function public.is_org_owner(p_org bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.org_members where org_id = p_org and user_id = auth.uid() and role = 'owner');
+$$;
+
+create or replace function public.shares_org_with(p_user uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.org_members a join public.org_members b on a.org_id = b.org_id
+    where a.user_id = auth.uid() and b.user_id = p_user
+  );
+$$;
+
+-- 8 characters, no look-alikes (0/O, 1/I/L)
+create or replace function public.new_invite_code() returns text
+language plpgsql volatile set search_path = public as $$
+declare
+  alphabet text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  code text;
+begin
+  loop
+    code := '';
+    for i in 1..8 loop
+      code := code || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    end loop;
+    exit when not exists (select 1 from public.organizations where invite_code = code);
+  end loop;
+  return code;
+end $$;
+
+create or replace function public.create_organization(p_name text) returns public.organizations
+language plpgsql security definer set search_path = public as $$
+declare o public.organizations;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if length(trim(coalesce(p_name, ''))) = 0 then raise exception 'Name is required'; end if;
+  insert into public.organizations(name, invite_code, created_by)
+  values (trim(p_name), public.new_invite_code(), auth.uid())
+  returning * into o;
+  insert into public.org_members(org_id, user_id, role) values (o.id, auth.uid(), 'owner');
+  return o;
+end $$;
+
+create or replace function public.join_organization(p_code text) returns public.organizations
+language plpgsql security definer set search_path = public as $$
+declare o public.organizations;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  select * into o from public.organizations
+  where invite_code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  if o.id is null then raise exception 'Invalid invite code'; end if;
+  insert into public.org_members(org_id, user_id) values (o.id, auth.uid()) on conflict do nothing;
+  return o;
+end $$;
+
+create or replace function public.regenerate_invite_code(p_org bigint) returns text
+language plpgsql security definer set search_path = public as $$
+declare code text;
+begin
+  if not public.is_org_owner(p_org) then raise exception 'Only the owner can do this'; end if;
+  code := public.new_invite_code();
+  update public.organizations set invite_code = code where id = p_org;
+  return code;
+end $$;
+
+-- When someone leaves: delete empty orgs, and make sure an owner remains.
+create or replace function public.on_member_removed() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.organizations where id = old.org_id) then
+    return old;   -- the organization itself is being deleted
+  elsif not exists (select 1 from public.org_members where org_id = old.org_id) then
+    delete from public.organizations where id = old.org_id;
+  elsif not exists (select 1 from public.org_members where org_id = old.org_id and role = 'owner') then
+    update public.org_members set role = 'owner'
+    where (org_id, user_id) = (
+      select org_id, user_id from public.org_members where org_id = old.org_id order by joined_at limit 1);
+  end if;
+  return old;
+end $$;
+
+drop trigger if exists member_removed on public.org_members;
+create trigger member_removed
+  after delete on public.org_members
+  for each row execute function public.on_member_removed();
+
+revoke execute on function public.create_organization(text), public.join_organization(text),
+  public.regenerate_invite_code(bigint) from public, anon;
+grant execute on function public.create_organization(text), public.join_organization(text),
+  public.regenerate_invite_code(bigint), public.is_org_member(bigint), public.is_org_owner(bigint)
+  to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Categories (max 2 levels: parent → child), per organization
+-- ---------------------------------------------------------------------
+create table if not exists public.categories (
+  id         bigint generated always as identity primary key,
+  org_id     bigint not null references public.organizations(id) on delete cascade,
+  name       text not null check (length(trim(name)) > 0),
+  parent_id  bigint references public.categories(id) on delete cascade,
+  sort_order int not null default 0,
+  created_by uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists categories_org_idx on public.categories(org_id);
+
+create or replace function public.check_category() returns trigger
+language plpgsql as $$
+begin
+  if new.parent_id is not null then
+    if new.parent_id = new.id then
+      raise exception 'A category cannot be its own parent';
+    end if;
+    if not exists (select 1 from public.categories where id = new.parent_id and org_id = new.org_id) then
+      raise exception 'Parent category belongs to another organization';
+    end if;
+    if exists (select 1 from public.categories where id = new.parent_id and parent_id is not null) then
+      raise exception 'Only 2 levels of categories are allowed';
+    end if;
+    if exists (select 1 from public.categories where parent_id = new.id) then
+      raise exception 'This category has sub-categories, so it cannot become a sub-category';
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists categories_check on public.categories;
+create trigger categories_check
+  before insert or update on public.categories
+  for each row execute function public.check_category();
+
+-- ---------------------------------------------------------------------
+-- Places (Google Maps share links)
+-- ---------------------------------------------------------------------
+create table if not exists public.places (
+  id          bigint generated always as identity primary key,
+  org_id      bigint not null references public.organizations(id) on delete cascade,
+  name        text not null check (length(trim(name)) > 0),
+  map_url     text not null check (map_url ~* '^https?://'),
+  category_id bigint references public.categories(id) on delete set null,
+  note        text not null default '',
+  google_place_id text,   -- resolved by the place-photos Edge Function (Google allows storing place IDs)
+  created_by  uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at  timestamptz not null default now()
+);
+alter table public.places add column if not exists google_place_id text;
+create index if not exists places_org_idx on public.places(org_id);
+
+create or replace function public.check_place() returns trigger
+language plpgsql as $$
+begin
+  if new.category_id is not null
+     and not exists (select 1 from public.categories where id = new.category_id and org_id = new.org_id) then
+    raise exception 'Category belongs to another organization';
+  end if;
+  -- a different link may point to a different place: look it up again
+  if tg_op = 'UPDATE' and new.map_url is distinct from old.map_url then
+    new.google_place_id := null;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists places_check on public.places;
+create trigger places_check
+  before insert or update on public.places
+  for each row execute function public.check_place();
+
+-- ---------------------------------------------------------------------
+-- Event series = the "rule" (one-off or repeating).
+-- Events = concrete dates generated from a series.
+-- ---------------------------------------------------------------------
+create table if not exists public.event_series (
+  id               bigint generated always as identity primary key,
+  org_id           bigint not null references public.organizations(id) on delete cascade,
+  place_id         bigint not null references public.places(id) on delete cascade,
+  title            text not null check (length(trim(title)) > 0),
+  description      text not null default '',
+  start_date       date not null,
+  start_time       time not null,
+  duration_minutes int  not null default 120 check (duration_minutes > 0),
+  timezone         text not null default 'Asia/Tokyo',
+  freq             text not null default 'none' check (freq in ('none','daily','weekly','monthly')),
+  interval_n       int  not null default 1 check (interval_n between 1 and 52),
+  weekdays         int[] not null default '{}',   -- 0=Sun … 6=Sat (weekly only)
+  until_date       date,
+  capacity         int check (capacity is null or capacity > 0),
+  active           boolean not null default true,
+  created_by       uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  created_at       timestamptz not null default now()
+);
+
+create or replace function public.check_series() returns trigger
+language plpgsql as $$
+begin
+  if not exists (select 1 from public.places where id = new.place_id and org_id = new.org_id) then
+    raise exception 'Place belongs to another organization';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists series_check on public.event_series;
+create trigger series_check
+  before insert or update on public.event_series
+  for each row execute function public.check_series();
+
+create table if not exists public.events (
+  id          bigint generated always as identity primary key,
+  org_id      bigint not null references public.organizations(id) on delete cascade,
+  series_id   bigint not null references public.event_series(id) on delete cascade,
+  place_id    bigint not null references public.places(id) on delete cascade,
+  title       text not null,
+  description text not null default '',
+  starts_at   timestamptz not null,
+  ends_at     timestamptz not null,
+  capacity    int,
+  cancelled   boolean not null default false,
+  created_by  uuid not null references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  unique (series_id, starts_at)
+);
+create index if not exists events_org_starts_idx on public.events(org_id, starts_at);
+
+-- People who joined a specific date. Order of joined_at decides who is
+-- confirmed and who is on the waiting list (capacity is never a hard block).
+create table if not exists public.event_participants (
+  id         bigint generated always as identity primary key,
+  event_id   bigint not null references public.events(id) on delete cascade,
+  user_id    uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  guest_name text not null default '',   -- '' = the user themself; otherwise a guest they bring
+  joined_at  timestamptz not null default now(),
+  unique (event_id, user_id, guest_name)
+);
+create index if not exists participants_event_idx on public.event_participants(event_id);
+
+-- "Auto-join every time" for a repeating series.
+create table if not exists public.series_subscribers (
+  series_id  bigint not null references public.event_series(id) on delete cascade,
+  user_id    uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (series_id, user_id)
+);
+
+-- Confirmed / waiting list, computed live.
+create or replace view public.event_participant_status
+with (security_invoker = true) as
+select p.id, p.event_id, p.user_id, p.guest_name, p.joined_at,
+       pr.display_name,
+       row_number() over w as position,
+       case when e.capacity is null or row_number() over w <= e.capacity
+            then 'confirmed' else 'waitlist' end as status
+from public.event_participants p
+join public.events e on e.id = p.event_id
+left join public.profiles pr on pr.id = p.user_id
+window w as (partition by p.event_id order by p.joined_at, p.id);
+
+grant select on public.event_participant_status to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Generator: creates concrete events for the next N days.
+-- p_series_id = null → all active repeating series (used by cron).
+-- ---------------------------------------------------------------------
+create or replace function public.generate_series_events(
+  p_series_id bigint default null,
+  p_horizon_days int default public.event_horizon_days()
+) returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  s      record;
+  d      date;
+  d_from date;
+  d_to   date;
+  today  date;
+  wd     int[];
+  ok     boolean;
+  st     timestamptz;
+  new_id bigint;
+  n      int := 0;
+begin
+  for s in
+    select * from public.event_series
+    where active
+      and (p_series_id is null or id = p_series_id)
+      and (p_series_id is not null or freq <> 'none')
+  loop
+    today := (now() at time zone s.timezone)::date;
+    if s.freq = 'none' then
+      d_from := s.start_date;
+      d_to   := s.start_date;
+    else
+      d_from := greatest(s.start_date, today);
+      d_to   := today + p_horizon_days;
+      if s.until_date is not null then d_to := least(d_to, s.until_date); end if;
+    end if;
+
+    wd := case when coalesce(cardinality(s.weekdays), 0) = 0
+               then array[extract(dow from s.start_date)::int] else s.weekdays end;
+
+    d := d_from;
+    while d <= d_to loop
+      ok := case s.freq
+        when 'none'    then true
+        when 'daily'   then (d - s.start_date) % s.interval_n = 0
+        when 'weekly'  then extract(dow from d)::int = any(wd)
+                        and ((d - (s.start_date - extract(dow from s.start_date)::int)) / 7) % s.interval_n = 0
+        when 'monthly' then extract(day from d) = extract(day from s.start_date)
+                        and ((extract(year from d) * 12 + extract(month from d))
+                           - (extract(year from s.start_date) * 12 + extract(month from s.start_date)))::int
+                           % s.interval_n = 0
+        else false
+      end;
+
+      if ok then
+        st := (d + s.start_time) at time zone s.timezone;
+        insert into public.events(org_id, series_id, place_id, title, description, starts_at, ends_at, capacity, created_by)
+        values (s.org_id, s.id, s.place_id, s.title, s.description, st,
+                st + make_interval(mins => s.duration_minutes), s.capacity, s.created_by)
+        on conflict (series_id, starts_at) do nothing
+        returning id into new_id;
+
+        if new_id is not null then
+          -- auto-join subscribers, in the order they subscribed
+          insert into public.event_participants(event_id, user_id, joined_at)
+          select new_id, ss.user_id, ss.created_at
+          from public.series_subscribers ss
+          where ss.series_id = s.id
+          on conflict do nothing;
+          n := n + 1;
+        end if;
+      end if;
+      d := d + 1;
+    end loop;
+  end loop;
+  return n;
+end $$;
+
+revoke execute on function public.generate_series_events(bigint, int) from public, anon, authenticated;
+
+-- Series insert/update → (re)generate dates and propagate edits.
+create or replace function public.on_series_changed() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' then
+    update public.events
+       set title = new.title, description = new.description, capacity = new.capacity
+     where series_id = new.id and starts_at > now();
+
+    if not new.active then
+      delete from public.events where series_id = new.id and starts_at > now();
+    elsif new.until_date is not null then
+      delete from public.events
+       where series_id = new.id and starts_at > now()
+         and (starts_at at time zone new.timezone)::date > new.until_date;
+    end if;
+  end if;
+
+  if new.active then
+    perform public.generate_series_events(new.id);
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists series_changed on public.event_series;
+create trigger series_changed
+  after insert or update on public.event_series
+  for each row execute function public.on_series_changed();
+
+-- Subscribe → join all future dates; unsubscribe → leave future dates.
+create or replace function public.on_subscriber_changed() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.event_participants(event_id, user_id, joined_at)
+    select e.id, new.user_id, now()
+    from public.events e
+    where e.series_id = new.series_id and e.starts_at > now() and not e.cancelled
+    on conflict do nothing;
+    return new;
+  else
+    delete from public.event_participants p
+    using public.events e
+    where p.event_id = e.id and e.series_id = old.series_id and e.starts_at > now()
+      and p.user_id = old.user_id and p.guest_name = '';
+    return old;
+  end if;
+end $$;
+
+drop trigger if exists subscriber_changed on public.series_subscribers;
+create trigger subscriber_changed
+  after insert or delete on public.series_subscribers
+  for each row execute function public.on_subscriber_changed();
+
+-- ---------------------------------------------------------------------
+-- Row Level Security
+-- ---------------------------------------------------------------------
+alter table public.profiles           enable row level security;
+alter table public.organizations      enable row level security;
+alter table public.org_members        enable row level security;
+alter table public.categories         enable row level security;
+alter table public.places             enable row level security;
+alter table public.event_series       enable row level security;
+alter table public.events             enable row level security;
+alter table public.event_participants enable row level security;
+alter table public.series_subscribers enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in
+    select policyname, tablename from pg_policies
+    where schemaname = 'public'
+      and tablename in ('profiles','organizations','org_members','categories','places','event_series',
+                        'events','event_participants','series_subscribers')
+  loop
+    execute format('drop policy %I on public.%I', r.policyname, r.tablename);
+  end loop;
+end $$;
+
+-- profiles: yourself and people in your organizations
+create policy pr_select on public.profiles for select to authenticated
+  using (id = auth.uid() or public.shares_org_with(id));
+create policy pr_insert on public.profiles for insert to authenticated with check (id = auth.uid());
+create policy pr_update on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+
+-- organizations: created/joined via RPC; owner renames or deletes
+create policy org_select on public.organizations for select to authenticated using (public.is_org_member(id));
+create policy org_update on public.organizations for update to authenticated
+  using (public.is_org_owner(id)) with check (public.is_org_owner(id));
+create policy org_delete on public.organizations for delete to authenticated using (public.is_org_owner(id));
+
+-- org_members: see co-members; leave yourself; owner removes others
+create policy om_select on public.org_members for select to authenticated using (public.is_org_member(org_id));
+create policy om_delete on public.org_members for delete to authenticated
+  using (user_id = auth.uid() or public.is_org_owner(org_id));
+
+-- categories & places: any member of the organization
+create policy cat_all on public.categories for all to authenticated
+  using (public.is_org_member(org_id)) with check (public.is_org_member(org_id));
+create policy pl_all on public.places for all to authenticated
+  using (public.is_org_member(org_id)) with check (public.is_org_member(org_id));
+
+-- event_series: members read, creator edits
+create policy es_select on public.event_series for select to authenticated using (public.is_org_member(org_id));
+create policy es_insert on public.event_series for insert to authenticated
+  with check (public.is_org_member(org_id) and created_by = auth.uid());
+create policy es_update on public.event_series for update to authenticated
+  using (created_by = auth.uid()) with check (created_by = auth.uid() and public.is_org_member(org_id));
+create policy es_delete on public.event_series for delete to authenticated using (created_by = auth.uid());
+
+-- events: generated by the server; creator can cancel/restore or delete a date
+create policy ev_select on public.events for select to authenticated using (public.is_org_member(org_id));
+create policy ev_update on public.events for update to authenticated
+  using (created_by = auth.uid()) with check (created_by = auth.uid());
+create policy ev_delete on public.events for delete to authenticated using (created_by = auth.uid());
+
+-- participants: join/leave yourself (and your guests); organizer may remove anyone
+create policy ep_select on public.event_participants for select to authenticated
+  using (exists (select 1 from public.events e where e.id = event_id and public.is_org_member(e.org_id)));
+create policy ep_insert on public.event_participants for insert to authenticated
+  with check (user_id = auth.uid()
+              and exists (select 1 from public.events e where e.id = event_id and public.is_org_member(e.org_id)));
+create policy ep_delete on public.event_participants for delete to authenticated
+  using (user_id = auth.uid()
+         or exists (select 1 from public.events e where e.id = event_id and e.created_by = auth.uid()));
+
+-- subscribers
+create policy ss_select on public.series_subscribers for select to authenticated
+  using (exists (select 1 from public.event_series s where s.id = series_id and public.is_org_member(s.org_id)));
+create policy ss_insert on public.series_subscribers for insert to authenticated
+  with check (user_id = auth.uid()
+              and exists (select 1 from public.event_series s where s.id = series_id and public.is_org_member(s.org_id)));
+create policy ss_delete on public.series_subscribers for delete to authenticated using (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------
+-- Cron: every day at 03:00 JST (18:00 UTC) extend repeating events.
+-- ---------------------------------------------------------------------
+select cron.schedule(
+  'sharemap-generate-events',
+  '0 18 * * *',
+  $$select public.generate_series_events();$$
+);

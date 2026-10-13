@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ShareMap</title>
+  <meta name="description" content="Share favourite places and plan get-togethers with your family, club or friends.">
+  <meta name="theme-color" content="#f5f3ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141412" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="ShareMap">
+  <meta property="og:description" content="Share favourite places and plan get-togethers with your group.">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e6b66'/%3E%3Cpath d='M16 26s-7-6-7-11.4a7 7 0 0 1 14 0C23 20 16 26 16 26z' fill='%23fbfaf6'/%3E%3Ccircle cx='16' cy='14.6' r='2.6' fill='%231e6b66'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@500;600&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Icon set (stroke icons, 1.75 weight) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11M7.5 3.5c0 4.5 4.5 5.5 4.5 8.5s-4.5 4-4.5 8.5M16.5 3.5c0 4.5-4.5 5.5-4.5 8.5s4.5 4 4.5 8.5"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4 11V9.5A3.5 3.5 0 0 1 7.5 6H19l-3-3M20 13v1.5a3.5 3.5 0 0 1-3.5 3.5H5l3 3"/></symbol>
+    <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9.5 5.5 16 12l-6.5 6.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="10" cy="8.5" r="3.5"/><path d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5 1.6 0 3 .4 4.1 1.2M18.5 14v6M15.5 17h6"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14M10 16l-4-4 4-4M6 12h9"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M14.5 5.5l4 4M4.5 19.5l1-4.5L16 4.5a2.1 2.1 0 0 1 3 3L8.5 18z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+  </svg>
+
+  <a class="skip" href="#app" data-i18n="skip"></a>
+
+  <header class="topbar" id="topbar" hidden>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="var(--accent)"/><path d="M12 19.5s-5.2-4.5-5.2-8.5a5.2 5.2 0 0 1 10.4 0c0 4-5.2 8.5-5.2 8.5z" fill="var(--accent-text)"/><circle cx="12" cy="11" r="1.9" fill="var(--accent)"/></svg>
+      <span class="app-title"></span>
+    </div>
+    <select id="org-select" class="org-select" aria-label="Organization"></select>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <button data-view="places" class="active" data-i18n="nav.places"></button>
+      <button data-view="calendar" data-i18n="nav.calendar"></button>
+      <button data-view="categories" data-i18n="nav.categories"></button>
+      <button data-view="org" data-i18n="nav.org"></button>
+    </nav>
+    <div class="topbar-end">
+      <select class="lang-select" aria-label="Language"></select>
+      <button class="ghost icon" id="signout" data-i18n-title="signOut"><svg class="ic"><use href="#i-logout"/></svg></button>
+    </div>
+  </header>
+
+  <main id="app" tabindex="-1">
+    <!-- Sign in -->
+    <section class="view center" id="view-auth" hidden>
+      <div class="card narrow">
+        <div class="auth-lang"><select class="lang-select" aria-label="Language"></select></div>
+        <h1><svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="var(--accent)"/><path d="M12 19.5s-5.2-4.5-5.2-8.5a5.2 5.2 0 0 1 10.4 0c0 4-5.2 8.5-5.2 8.5z" fill="var(--accent-text)"/><circle cx="12" cy="11" r="1.9" fill="var(--accent)"/></svg><span class="app-title"></span></h1>
+        <p class="muted" data-i18n="auth.intro"></p>
+        <form id="auth-form" class="stack">
+          <input type="email" id="auth-email" data-i18n-ph="emailPh" required autocomplete="email">
+          <button type="submit" class="primary" data-i18n="auth.send"></button>
+        </form>
+        <form id="otp-form" class="stack" hidden>
+          <p class="muted" data-i18n="auth.codeIntro"></p>
+          <input type="text" id="otp-code" inputmode="numeric" data-i18n-ph="auth.codePh" autocomplete="one-time-code">
+          <button type="submit" class="primary" data-i18n="auth.verify"></button>
+        </form>
+      </div>
+    </section>
+
+    <!-- No organization yet: create or join -->
+    <section class="view center" id="view-onboard" hidden>
+      <div class="card narrow" id="onboard-card"></div>
+    </section>
+
+    <section class="view center" id="view-setup" hidden>
+      <div class="card narrow">
+        <h2 data-i18n="setup.title"></h2>
+        <p id="setup-body"></p>
+      </div>
+    </section>
+
+    <!-- Places -->
+    <section class="view" id="view-places" hidden>
+      <div class="places-layout">
+        <aside class="cat-tree" id="cat-tree" aria-label="Categories"></aside>
+        <div class="places-main">
+          <div class="toolbar">
+            <div class="search">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <input type="search" id="place-search" data-i18n-ph="places.search">
+            </div>
+            <button class="primary" id="add-place"><svg class="ic"><use href="#i-plus"/></svg><span data-i18n="places.add"></span></button>
+          </div>
+          <div id="place-list" class="place-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Calendar -->
+    <section class="view" id="view-calendar" hidden>
+      <div class="toolbar">
+        <h1 id="cal-title" class="cal-title"></h1>
+        <button class="ghost icon" id="cal-prev" aria-label="Previous month"><svg class="ic"><use href="#i-left"/></svg></button>
+        <button class="ghost icon" id="cal-next" aria-label="Next month"><svg class="ic"><use href="#i-right"/></svg></button>
+        <button class="small" id="cal-today" data-i18n="cal.today"></button>
+        <span class="spacer"></span>
+        <button class="primary" id="add-event"><svg class="ic"><use href="#i-plus"/></svg><span data-i18n="cal.new"></span></button>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="section-head"><h2 data-i18n="cal.upcoming"></h2></div>
+      <div id="upcoming" class="upcoming"></div>
+    </section>
+
+    <!-- Categories -->
+    <section class="view" id="view-categories" hidden>
+      <div class="page-head"><h1 data-i18n="cats.title"></h1></div>
+      <div class="card">
+        <form id="add-parent-form" class="inline">
+          <input type="text" id="new-parent-name" data-i18n-ph="cats.newParentPh" required>
+          <button class="primary"><svg class="ic"><use href="#i-plus"/></svg><span data-i18n="add"></span></button>
+        </form>
+        <div id="cat-manage"></div>
+      </div>
+    </section>
+
+    <!-- Organization & members -->
+    <section class="view" id="view-org" hidden>
+      <div class="org-head">
+        <div><p class="eyebrow" data-i18n="org.label"></p><h1 id="org-name"></h1></div>
+        <button class="ghost small" id="org-rename" hidden><svg class="ic sm"><use href="#i-pencil"/></svg><span data-i18n="rename"></span></button>
+      </div>
+      <div class="org-layout">
+        <div class="col">
+          <div class="card invite-card">
+            <h2 data-i18n="org.invite"></h2>
+            <div class="invite-code" id="invite-code"></div>
+            <div class="btn-row">
+              <button class="primary" id="copy-code"><svg class="ic"><use href="#i-copy"/></svg><span data-i18n="org.copyCode"></span></button>
+              <button id="copy-link"><svg class="ic"><use href="#i-link"/></svg><span data-i18n="org.copyLink"></span></button>
+              <button class="ghost" id="new-code" hidden><svg class="ic"><use href="#i-refresh"/></svg><span data-i18n="org.newCode"></span></button>
+            </div>
+          </div>
+          <div class="card">
+            <h2 id="member-title"></h2>
+            <ul id="member-list" class="plain-list"></ul>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h2 data-i18n="fam.profile"></h2>
+            <form id="profile-form" class="inline">
+              <input type="text" id="display-name" data-i18n-ph="fam.displayName" required>
+              <button class="primary" data-i18n="save"></button>
+            </form>
+          </div>
+          <div class="card">
+            <h2 data-i18n="org.mine"></h2>
+            <ul id="my-orgs" class="plain-list"></ul>
+            <div class="btn-row">
+              <button id="org-add"><svg class="ic"><use href="#i-plus"/></svg><span data-i18n="org.createJoin"></span></button>
+            </div>
+            <div class="danger-zone">
+              <button class="danger" id="org-leave" data-i18n="org.leave"></button>
+              <button class="danger" id="org-delete" data-i18n="org.delete" hidden></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="modal">
+    <div id="modal-body"></div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
