@@ -15,8 +15,9 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   To add a language, copy a block in [`js/i18n.js`](js/i18n.js).
 - **Places**: paste a Google Maps share link (or the whole "Share" text; the name fills in automatically).
   Clicking a place opens it in Google Maps (on phones it opens in the Google Maps app).
-- **Photos**: each place shows its first Google photo; click it to unfold the next two. Photos come from the
-  official Google Places API through a small Supabase Edge Function, so your Google API key stays secret.
+- **Place covers**: each place gets a generated map-style cover in its category's colour, showing the
+  place name and the next time something is planned there (date and time follow the chosen language).
+  Click the time to jump to that event. No external image service, no cost.
 - **Categories**: you create them yourselves, with two levels (main category → sub-category), e.g. `Food › Ramen`.
 - **Calendar**: pick a place from the list and create an event.
   - **Repeat**: weekly (choose weekdays, every N weeks), daily, or monthly, with an optional end date.
@@ -62,28 +63,7 @@ In Supabase, go to **Authentication → URL Configuration**:
 Optional: to get a 6-digit code as well as the link (handy when the link opens in a different browser on a phone),
 go to **Authentication → Email Templates → Magic Link** and add `{{ .Token }}` to the template.
 
-### 5. Google photos
-
-1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and turn on **billing**
-   (a card is required; Google's monthly free usage normally covers a family or club).
-2. **APIs & Services → Library**: enable **Places API (New)**.
-3. **APIs & Services → Credentials → Create credentials → API key**. Edit the key and, under
-   *API restrictions*, allow only **Places API (New)**. Leave *Application restrictions* as None:
-   the key is used from Supabase's server, never from the browser.
-4. Optional but recommended: **Billing → Budgets & alerts**, set a small monthly budget with an email alert.
-5. Put the key into Supabase: **Edge Functions → Secrets → Add secret**, name `GOOGLE_MAPS_API_KEY`.
-6. Deploy the function from this folder (needs Node.js; it logs you in to Supabase in the browser):
-   ```bash
-   npx supabase login
-   ```
-   ```bash
-   npx supabase functions deploy place-photos --project-ref YOUR_PROJECT_REF
-   ```
-   `YOUR_PROJECT_REF` is the part before `.supabase.co` in your Project URL.
-
-If you skip this step, everything else works; places just show no photos.
-
-### 6. Start using it
+### 5. Start using it
 
 Sign in, create your organization, then open the **Members** tab and share the invite code or link.
 
@@ -96,16 +76,6 @@ Then open <http://localhost:8765/>.
 
 ## Notes
 
-- Photos: a card fetches its first photo only when it scrolls into view, and the other two only when
-  someone clicks it. Results are remembered for 45 minutes in that browser tab. Only Google's place ID
-  is stored in the database; Google's terms don't allow storing the photos themselves.
-- If the photos are of the wrong place (it can happen when a link has no place name in it), open the exact
-  place in Google Maps, tap Share, and paste that new link into the place. A changed link triggers a fresh lookup.
-
-- Invite codes are 8 characters without look-alike characters (no 0/O or 1/I/L). Spaces, dashes and
-  lowercase are accepted when typing.
-- An invite link is remembered in that browser until sign-in finishes. If the login email opens in a different
-  browser, just type the code in.
 - Dates are generated 90 days ahead. To change this, edit `event_horizon_days()` in `schema.sql`.
 - To change the date, time or repeat rule of a series, delete it and create a new one. You can edit the
   title, people limit, details and end date, or stop the series.

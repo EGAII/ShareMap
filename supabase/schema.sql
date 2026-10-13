@@ -202,11 +202,9 @@ create table if not exists public.places (
   map_url     text not null check (map_url ~* '^https?://'),
   category_id bigint references public.categories(id) on delete set null,
   note        text not null default '',
-  google_place_id text,   -- resolved by the place-photos Edge Function (Google allows storing place IDs)
   created_by  uuid default auth.uid() references public.profiles(id) on delete set null,
   created_at  timestamptz not null default now()
 );
-alter table public.places add column if not exists google_place_id text;
 create index if not exists places_org_idx on public.places(org_id);
 
 create or replace function public.check_place() returns trigger
@@ -215,10 +213,6 @@ begin
   if new.category_id is not null
      and not exists (select 1 from public.categories where id = new.category_id and org_id = new.org_id) then
     raise exception 'Category belongs to another organization';
-  end if;
-  -- a different link may point to a different place: look it up again
-  if tg_op = 'UPDATE' and new.map_url is distinct from old.map_url then
-    new.google_place_id := null;
   end if;
   return new;
 end $$;

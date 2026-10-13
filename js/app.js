@@ -123,6 +123,10 @@ const state = {
   parts: new Map(),     // event_id -> participant rows (ordered)
   series: new Map(),    // series_id -> series row
   mySubs: new Set(),    // series ids I auto-join
+  next: new Map(),      // place_id -> next upcoming event (for place covers)
+  nextCount: new Map(), // place_id -> number of upcoming events
+  nextSig: '',
+  nextAt: 0,
 };
 
 applyLanguage();
@@ -291,7 +295,10 @@ async function loadBase() {
   state.categories = check(cats);
   state.places = check(places);
   state.members = check(members);
+  await loadNext().catch(() => {});
 }
+// Place covers show the next event; refetch after any change to events
+const eventsChanged = () => { state.nextAt = 0; };
 
 // ---------------------------------------------------------------------
 // Navigation
@@ -306,11 +313,11 @@ function switchView(v) {
   store.set('fsm.view', v);
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
   showOnly('view-' + v);
-  render();
+  return render();
 }
-function render() {
+async function render() {
   if (state.view === 'places') renderPlaces();
-  else if (state.view === 'calendar') renderCalendar();
+  else if (state.view === 'calendar') await renderCalendar();
   else if (state.view === 'categories') renderCategories();
   else if (state.view === 'org') renderOrgPage();
 }
@@ -407,156 +414,132 @@ function renderPlaceList() {
            <button class="primary" data-act="add">${ic('plus')}${esc(t('places.add'))}</button></div>`;
     return;
   }
-  $('#place-list').innerHTML = list.map((p) => `
+  $('#place-list').innerHTML = list.map(placeCard).join('');
+  // Pick up events created since the last look (at most every 10 s)
+  if (Date.now() - state.nextAt > 10_000) {
+    loadNext().then((changed) => { if (changed && state.view === 'places') renderPlaceList(); }).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------
+// Place cover: a small generated "map" in the category's colour, with the
+// place name and the next time something is planned there.
+// ---------------------------------------------------------------------
+function hashStr(s) {
+  let h = 2166136261;
+  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function seeded(seed) {   // mulberry32
+  let a = seed;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t2 = Math.imul(a ^ (a >>> 15), 1 | a);
+    t2 = (t2 + Math.imul(t2 ^ (t2 >>> 7), 61 | t2)) ^ t2;
+    return ((t2 ^ (t2 >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const COVER_HUES = 6;
+function coverHue(place) {
+  const c = catById(place.category_id);
+  const root = c?.parent_id ? catById(c.parent_id) : c;
+  return root ? `hue-${hashStr(root.id + ':' + root.name) % COVER_HUES}` : 'hue-n';
+}
+// Contour lines + a pin, deterministic per place name
+function coverArt(place) {
+  const rnd = seeded(hashStr(place.name));
+  const W = 400, H = 200;
+  let lines = '';
+  const layers = 7;
+  for (let i = 0; i < layers; i++) {
+    const base = 14 + i * (H / (layers - 1)) + (rnd() - .5) * 10;
+    const amp = 5 + rnd() * 16, freq = .008 + rnd() * .014, phase = rnd() * Math.PI * 2;
+    const amp2 = rnd() * 6, freq2 = .03 + rnd() * .02;
+    let d = '';
+    for (let x = -10; x <= W + 10; x += 10) {
+      const y = base + amp * Math.sin(x * freq + phase) + amp2 * Math.sin(x * freq2 + phase * 2);
+      d += `${d ? 'L' : 'M'}${x} ${y.toFixed(1)}`;
+    }
+    lines += `<path d="${d}" opacity="${(.35 + rnd() * .5).toFixed(2)}"/>`;
+  }
+  const px = (W * .55 + rnd() * W * .35).toFixed(0), py = (H * .22 + rnd() * H * .3).toFixed(0);
+  return `<svg class="topo" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="1.1">${lines}</g>
+      <circle class="pin-halo" cx="${px}" cy="${py}" r="30"/><circle class="pin-ring" cx="${px}" cy="${py}" r="15"/>
+      <circle class="pin-dot" cx="${px}" cy="${py}" r="5"/>
+    </svg>`;
+}
+
+function nextChip(place) {
+  const ev = state.next.get(place.id);
+  if (!ev) return `<span class="when none">${ic('calendar', 'sm')}${esc(t('cover.none'))}</span>`;
+  const d = new Date(ev.starts_at);
+  const more = (state.nextCount.get(place.id) || 1) - 1;
+  const label = t('cover.next', { title: ev.title });
+  return `<button type="button" class="when" data-act="open-event" data-id="${ev.id}" data-at="${esc(ev.starts_at)}"
+      title="${esc(label)}" aria-label="${esc(`${label} · ${fmtDate(d)} ${fmtTime(d)}`)}">
+      ${ic('calendar', 'sm')}<time datetime="${esc(ev.starts_at)}">${esc(fmtDate(d))} · ${esc(fmtTime(d))}</time>${
+      more > 0 ? `<span class="when-more">+${more}</span>` : ''}</button>`;
+}
+
+function placeCard(p) {
+  const cat = p.category_id ? catPath(p.category_id) : '';
+  return `
     <article class="place-card">
-      ${photos.off ? '' : `<div class="ph-wrap" data-ph="${p.id}"><div class="skeleton ph-sk"></div></div>`}
-      <a class="card-link" href="${esc(safeUrl(p.map_url))}" target="_blank" rel="noopener" title="${esc(t('places.open'))}">
-        <span class="name">${esc(p.name)}</span>${ic('out', 'go')}
-      </a>
-      ${p.category_id ? `<span class="tag">${esc(catPath(p.category_id))}</span>` : ''}
+      <div class="cover ${coverHue(p)}">
+        ${coverArt(p)}
+        <div class="cover-top">
+          ${cat ? `<span class="cover-cat">${esc(cat)}</span>` : '<span></span>'}
+          ${ic('out', 'go')}
+        </div>
+        <a class="card-link" href="${esc(safeUrl(p.map_url))}" target="_blank" rel="noopener" title="${esc(t('places.open'))}">
+          <span class="name">${esc(p.name)}</span>
+        </a>
+        ${nextChip(p)}
+      </div>
       ${p.note ? `<span class="note">${esc(p.note)}</span>` : ''}
       <span class="actions">
         <button class="small" data-act="event" data-id="${p.id}">${ic('calendar', 'sm')}${esc(t('places.event'))}</button>
         <button class="small" data-act="edit" data-id="${p.id}">${ic('pencil', 'sm')}${esc(t('edit'))}</button>
       </span>
-    </article>`).join('');
-  $$('#place-list [data-ph]').forEach((el) => photos.observer.observe(el));
+    </article>`;
 }
+
+// Next upcoming (not cancelled) event per place, for the covers
+async function loadNext() {
+  const org = state.orgId;
+  const rows = check(await sb.from('events').select('id, place_id, title, starts_at')
+    .eq('org_id', org).eq('cancelled', false).gte('starts_at', new Date().toISOString())
+    .order('starts_at').limit(500));
+  if (org !== state.orgId) return false;
+  const next = new Map();
+  const count = new Map();
+  for (const r of rows) {
+    if (!next.has(r.place_id)) next.set(r.place_id, r);
+    count.set(r.place_id, (count.get(r.place_id) || 0) + 1);
+  }
+  const sig = JSON.stringify([...next.values()].map((r) => [r.id, r.title, r.starts_at]).concat([...count]));
+  const changed = sig !== state.nextSig;
+  Object.assign(state, { next, nextCount: count, nextSig: sig, nextAt: Date.now() });
+  return changed;
+}
+
+async function openEventFromCover(id, startsAt) {
+  state.month = startOfMonth(new Date(startsAt));
+  await switchView('calendar');
+  eventDetail(id);
+}
+
 $('#place-list').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-act]');
   if (!b) return;           // the card's own link opens Google Maps
   e.preventDefault();
   if (b.dataset.act === 'add') return placeForm();
-  if (b.dataset.act === 'photos') return togglePhotos(b.closest('[data-ph]'));
+  if (b.dataset.act === 'open-event') return openEventFromCover(Number(b.dataset.id), b.dataset.at);
   const place = state.places.find((p) => p.id === Number(b.dataset.id));
   if (b.dataset.act === 'edit') placeForm(place);
   if (b.dataset.act === 'event') eventForm({ placeId: place.id });
 });
-
-// ---------------------------------------------------------------------
-// Place photos (Google Places, via the place-photos Edge Function)
-// Shows the first photo; the other two load only when someone clicks it.
-// ---------------------------------------------------------------------
-const photos = {
-  off: false,              // set after repeated failures (e.g. function not deployed)
-  failures: 0,
-  active: 0,
-  queue: [],
-  TTL: 45 * 60 * 1000,     // Google photo links are short-lived; refetch after this
-  observer: new IntersectionObserver((entries) => {
-    for (const en of entries) {
-      if (!en.isIntersecting) continue;
-      photos.observer.unobserve(en.target);
-      loadPhotos(en.target, 1);
-    }
-  }, { rootMargin: '200px' }),
-};
-
-function photoCacheKey(place) { return `fsm.ph.${place.id}.${place.map_url}`; }
-function cachedPhotos(place) {
-  try {
-    const c = JSON.parse(sessionStorage.getItem(photoCacheKey(place)));
-    return c && Date.now() - c.at < photos.TTL ? c : null;
-  } catch { return null; }
-}
-
-// At most 3 requests in flight
-function queuePhotoRequest(fn) {
-  return new Promise((resolve, reject) => {
-    photos.queue.push([fn, resolve, reject]);
-    pumpPhotos();
-  });
-}
-function pumpPhotos() {
-  while (photos.active < 3 && photos.queue.length) {
-    const [fn, resolve, reject] = photos.queue.shift();
-    photos.active++;
-    fn().then(resolve, reject).finally(() => { photos.active--; pumpPhotos(); });
-  }
-}
-
-async function fetchPhotos(place, limit) {
-  const cached = cachedPhotos(place);
-  if (cached && cached.photos.length >= Math.min(limit, cached.available)) return cached;
-  const { data, error } = await queuePhotoRequest(() =>
-    sb.functions.invoke('place-photos', { body: { place_id: place.id, limit } }));
-  if (error) throw error;
-  const result = { available: data.available, photos: data.photos, at: Date.now() };
-  try { sessionStorage.setItem(photoCacheKey(place), JSON.stringify(result)); } catch { /* full or blocked */ }
-  return result;
-}
-
-// Google requires showing the photographer and a Google Maps credit with each photo
-function photoCredit(ph) {
-  if (!ph.author) return 'Google Maps';
-  const who = ph.authorUri
-    ? `<a href="${esc(safeUrl(ph.authorUri))}" target="_blank" rel="noopener">${esc(ph.author)}</a>`
-    : esc(ph.author);
-  return `${esc(t('ph.by', { name: '%WHO%' })).replace('%WHO%', who)} · Google Maps`;
-}
-function photoImg(place, ph, n, lazy) {
-  return `<img src="${esc(safeUrl(ph.url))}" alt="${esc(t('ph.alt', { name: place.name, n }))}"${lazy ? ' loading="lazy"' : ''} decoding="async" referrerpolicy="no-referrer">`;
-}
-
-function renderPhotos(wrap, place, data) {
-  if (!data.photos.length) { wrap.remove(); return; }
-  const extra = data.available - 1;
-  const [first] = data.photos;
-  wrap.dataset.extra = String(extra);
-  wrap.innerHTML = `
-    <div class="ph-hero">
-      <button type="button" class="ph-main" data-act="photos" ${extra > 0 ? `aria-expanded="false" aria-label="${esc(t('ph.more', { n: extra }))}"` : 'disabled'}>
-        ${photoImg(place, first, 1, false)}
-        ${extra > 0 ? `<span class="ph-count" aria-hidden="true">${ic('plus', 'sm')}${extra}</span>` : ''}
-      </button>
-      <p class="ph-credit">${photoCredit(first)}</p>
-    </div>
-    <div class="ph-more" hidden></div>`;
-  wrap.querySelectorAll('img').forEach((img) => img.addEventListener('error', () => {
-    try { sessionStorage.removeItem(photoCacheKey(place)); } catch { /* ignore */ }
-    wrap.remove();
-  }, { once: true }));
-}
-
-async function loadPhotos(wrap, limit) {
-  const place = state.places.find((p) => p.id === Number(wrap.dataset.ph));
-  if (!place || photos.off) { wrap.remove(); return; }
-  try {
-    const data = await fetchPhotos(place, limit);
-    photos.failures = 0;
-    if (wrap.isConnected) renderPhotos(wrap, place, data);
-  } catch (err) {
-    console.warn('Photos unavailable:', err?.message || err);
-    wrap.remove();
-    if (++photos.failures >= 3) {
-      photos.off = true;
-      $$('#place-list [data-ph]').forEach((el) => el.remove());
-    }
-  }
-}
-
-async function togglePhotos(wrap) {
-  const btn = $('.ph-main', wrap);
-  const more = $('.ph-more', wrap);
-  const open = btn.getAttribute('aria-expanded') !== 'true';
-  const place = state.places.find((p) => p.id === Number(wrap.dataset.ph));
-  const extra = Number(wrap.dataset.extra || 0);
-  btn.setAttribute('aria-expanded', String(open));
-  btn.setAttribute('aria-label', t(open ? 'ph.hide' : 'ph.more', { n: extra }));
-  more.hidden = !open;
-  if (!open || more.dataset.loaded) return;
-  more.innerHTML = skeletons('ph-sk small', extra);
-  try {
-    const data = await fetchPhotos(place, 3);
-    more.innerHTML = data.photos.slice(1).map((ph, i) =>
-      `<figure class="ph-extra">${photoImg(place, ph, i + 2, true)}<figcaption>${photoCredit(ph)}</figcaption></figure>`).join('');
-    more.dataset.loaded = '1';
-  } catch (err) {
-    console.warn('Photos unavailable:', err?.message || err);
-    more.hidden = true;
-    btn.setAttribute('aria-expanded', 'false');
-  }
-}
 
 function placeForm(place = null) {
   const preCat = place ? place.category_id
@@ -1016,6 +999,7 @@ function eventForm({ placeId = null, date = null } = {}) {
     try {
       const series = check(await sb.from('event_series').insert(row).select().single());
       if (f.autojoin.checked) check(await sb.from('series_subscribers').insert({ series_id: series.id }));
+      eventsChanged();
       closeModal();
       toast(t(freq === 'none' ? 'ev.created' : 'ev.createdRepeat'));
       state.month = startOfMonth(new Date(row.start_date + 'T00:00'));
@@ -1152,6 +1136,7 @@ function eventDetail(id) {
   });
   on('#ev-cancel', async () => {
     check(await sb.from('events').update({ cancelled: !ev.cancelled }).eq('id', ev.id));
+    eventsChanged();
     await refresh();
   });
   $('#ev-gcal', body).addEventListener('click', () => window.open(googleCalendarUrl(ev, place), '_blank', 'noopener'));
@@ -1159,6 +1144,7 @@ function eventDetail(id) {
   on('#ev-delete', async () => {
     if (!confirm(t(repeating ? 'ev.deleteSeriesConfirm' : 'ev.deleteConfirm'))) return;
     check(await sb.from('event_series').delete().eq('id', ev.series_id));
+    eventsChanged();
     closeModal();
     await renderCalendar();
   });
@@ -1198,6 +1184,7 @@ function seriesEdit(s, ev) {
       if (!row.active && !confirm(t('se.stopConfirm'))) return;
     }
     check(await sb.from('event_series').update(row).eq('id', s.id));
+    eventsChanged();
     toast(t('saved'));
     await renderCalendar();
     if (state.events.some((x) => x.id === ev.id)) eventDetail(ev.id); else closeModal();
