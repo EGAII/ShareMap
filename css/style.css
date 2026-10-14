@@ -605,6 +605,16 @@ button.when:hover { background: var(--surface); border-color: transparent; }
 .plain-list { list-style: none; padding: 0; margin: 0; }
 .plain-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .6rem; padding: .55rem 0; border-top: 1px solid var(--border); }
 .plain-list li:first-child { border-top: none; }
+:root { --scroll-shadow: rgba(40, 32, 20, .16); }
+@media (prefers-color-scheme: dark) { :root { --scroll-shadow: rgba(0, 0, 0, .6); } }
+/* Long lists scroll inside their card (about 7 rows); shadows at the top/bottom edge show there is more */
+.scroll-list { max-height: 22rem; overflow-y: auto; overscroll-behavior: contain; margin: 0 -.5rem; padding: 0 .5rem;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  background:
+    linear-gradient(var(--surface) 30%, transparent) top / 100% 2.5rem no-repeat local,
+    linear-gradient(transparent, var(--surface) 70%) bottom / 100% 2.5rem no-repeat local,
+    radial-gradient(farthest-side at 50% 0, var(--scroll-shadow), transparent) top / 100% .7rem no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, var(--scroll-shadow), transparent) bottom / 100% .7rem no-repeat scroll; }
 
 /* ---------------------------------------------------------------- Modal & toast */
 dialog {
