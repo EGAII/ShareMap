@@ -500,9 +500,11 @@ async function loadBase() {
   if (org !== state.orgId) return;   // switched organization meanwhile
   state.categories = check(cats);
   state.places = check(places);
-  state.members = check(members);
+  state.members = check(members).sort((a, b) => memberRank(a) - memberRank(b));   // stable: keeps join order within a group
   await loadNext().catch(() => {});
 }
+// Member lists: owner first, then organizers, regular members, and guests last
+const memberRank = (m) => (m.role === 'owner' ? 0 : m.profiles?.is_guest ? 3 : m.organizer ? 1 : 2);
 // Place covers show the next event; refetch after any change to events
 const eventsChanged = () => { state.nextAt = 0; };
 
@@ -1177,6 +1179,7 @@ $('#perm-tools').addEventListener('click', async (e) => {
         p_organizer: next.organizer, p_can_create: next.can_create, p_can_join: next.can_join }));
       Object.assign(m, next);
     }
+    state.members.sort((a, b) => memberRank(a) - memberRank(b));   // a new organizer moves up
     if (changed.length) toast(t('perm.saved'));
     permEditing = false;
   } catch (err) {
