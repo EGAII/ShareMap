@@ -38,7 +38,7 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   group with an invite code and sign up for events, but cannot create groups or events. A guest account is
   deleted automatically 7 days after joining its first group (checked every hour), together with its sign-ups;
   the event history keeps the record. Signing out of a guest account loses it.
-- **Owner controls**: the organization's owner can remove anyone's sign-up. On the **Permissions** page (only the
+- **Owner controls**: the organization's owner can remove anyone's sign-up and delete any event (it is recorded in the event's history). On the **Permissions** page (only the
   owner sees it) the owner can make a member an *Organizer*, turn off *Can create events* or *Can join events*,
   remove someone from the group, or **ban** them so they can never rejoin (until unbanned).
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).

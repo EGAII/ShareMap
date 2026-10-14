@@ -1524,6 +1524,10 @@ function eventDetail(id) {
         ${repeating ? `<button id="ev-cancel">${L(ev.cancelled ? 'ev.restoreDate' : 'ev.cancelDate')}</button>` : ''}
         <button id="ev-edit">${L(repeating ? 'ev.editSeries' : 'ev.edit')}</button>
         <button class="danger" id="ev-delete">${L(repeating ? 'ev.deleteSeries' : 'ev.delete')}</button>
+      </div></div>` : isAdmin() ? `
+      <div class="owner-zone"><div class="section-title">${L('ev.adminZone')}</div>
+      <div class="btn-row">
+        <button class="danger" id="ev-delete">${L(repeating ? 'ev.deleteSeries' : 'ev.delete')}</button>
       </div></div>` : ''}
   `);
 
