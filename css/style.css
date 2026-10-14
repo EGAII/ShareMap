@@ -399,6 +399,8 @@ button.when:hover { background: var(--surface); border-color: transparent; }
 .when-more { margin-left: .15rem; padding-left: .45rem; box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 35%, transparent); opacity: .75; }
 .place-card .note { color: var(--muted); font-size: .9rem; white-space: pre-wrap;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.place-card .added-by { color: var(--faint); font-size: .78rem; margin-top: .3rem;
+                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .place-card .actions { display: flex; gap: .25rem; margin-top: auto; padding-top: .55rem; margin-left: -.45rem; }
 .place-card .actions button { border-color: transparent; background: transparent; color: var(--muted); }
 .place-card .actions button:hover { background: var(--surface-2); color: var(--text); }

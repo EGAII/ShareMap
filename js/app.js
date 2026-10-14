@@ -788,6 +788,8 @@ function nextChip(place) {
 
 function placeCard(p) {
   const cat = p.category_id ? catPath(p.category_id) : '';
+  // Shown only while the person who added it is still in the group
+  const by = state.members.find((m) => m.user_id === p.created_by)?.profiles?.display_name;
   return `
     <article class="place-card">
       <div class="cover ${coverHue(p)}">
@@ -802,6 +804,7 @@ function placeCard(p) {
         ${nextChip(p)}
       </div>
       ${p.note ? `<span class="note">${esc(p.note)}</span>` : ''}
+      ${by ? `<span class="added-by">${esc(t('places.addedBy', { name: by }))}</span>` : ''}
       <span class="actions">
         <button class="small" data-act="event" data-id="${p.id}">${ic('calendar', 'sm')}${esc(t('places.event'))}</button>
         ${canEditPlace(p) ? `<button class="small" data-act="edit" data-id="${p.id}">${ic('pencil', 'sm')}${esc(t('edit'))}</button>` : ''}
