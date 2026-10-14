@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@500;600&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
   <!-- Icon set (stroke icons, 1.75 weight) -->
@@ -155,6 +155,13 @@
         <button class="primary" id="add-event"><svg class="ic"><use href="#i-plus"/></svg><span data-i18n="cal.new"></span></button>
       </div>
       <div class="cal-grid" id="cal-grid"></div>
+      <ul class="due-legend">
+        <li class="due-today" data-i18n="due.today"></li>
+        <li class="due-tomorrow" data-i18n="due.tomorrow"></li>
+        <li class="due-3days" data-i18n="due.within3"></li>
+        <li class="due-week" data-i18n="due.withinWeek"></li>
+        <li class="due-later" data-i18n="due.later"></li>
+      </ul>
       <div class="section-head"><h2 data-i18n="cal.upcoming"></h2></div>
       <ol class="up-guide">
         <li><span class="n">1</span><span data-i18n="up.step1"></span></li>
@@ -254,7 +261,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="js/config.js"></script>
-  <script src="js/i18n.js?v=8"></script>
-  <script src="js/app.js?v=8"></script>
+  <script src="js/i18n.js?v=11"></script>
+  <script src="js/app.js?v=11"></script>
 </body>
 </html>

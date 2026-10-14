@@ -451,8 +451,12 @@ button.when:hover { background: var(--surface); border-color: transparent; }
 .chip:hover { background: color-mix(in srgb, var(--accent-soft) 70%, var(--accent)); color: var(--accent-ink); }
 .chip .t { font-variant-numeric: tabular-nums; opacity: .75; }
 .chip.full { background: var(--warn-soft); color: var(--warn); }
-.chip.mine { box-shadow: inset 2px 0 0 var(--accent); }
-.chip.full.mine { box-shadow: inset 2px 0 0 var(--warn); }
+/* Within a week: colored by how soon it starts (see .due-* below); full = dashed outline */
+.chip:is(.due-today, .due-tomorrow, .due-3days, .due-week) { background: var(--due-soft); color: var(--due); }
+.chip:is(.due-today, .due-tomorrow, .due-3days, .due-week):hover { background: color-mix(in srgb, var(--due-soft) 75%, var(--due)); }
+.chip.full { outline: 1px dashed currentColor; outline-offset: -1px; }
+.chip.due-past { background: var(--surface-2); color: var(--muted); }
+.chip.mine { box-shadow: inset 2px 0 0 currentColor; }
 .chip.cancelled { text-decoration: line-through; background: var(--surface-2); color: var(--faint); }
 .more { font-size: .72rem; color: var(--muted); padding-left: 6px; }
 .section-head { display: flex; align-items: baseline; gap: .6rem; margin: 2.25rem 0 .8rem; }
@@ -469,8 +473,34 @@ button.when:hover { background: var(--surface); border-color: transparent; }
 .up-date { font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.3; }
 .up-main { min-width: 0; }
 .up-main b { font-weight: 600; }
+/* Short description: at most 2 lines, cut off with … */
+.up-desc { margin: .2rem 0 0; font-size: .84rem; color: var(--muted); overflow-wrap: anywhere;
+           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .up-meta { display: flex; flex-wrap: wrap; gap: .25rem .8rem; color: var(--muted); font-size: .84rem; margin-top: .15rem; }
 .up-meta span { display: inline-flex; align-items: center; gap: .3rem; font-variant-numeric: tabular-nums; }
+/* How soon an upcoming event starts: a colored bar on the left and a small tag */
+.up-item { box-shadow: inset 4px 0 0 var(--due, transparent); }
+.due-today    { --due: #c2402b; --due-soft: #f8e0da; }
+.due-tomorrow { --due: #d0671a; --due-soft: #fbe6d4; }
+.due-3days    { --due: #a37a0c; --due-soft: #f6eccc; }
+.due-week     { --due: #2f6fb3; --due-soft: #dde8f5; }
+.up-item.due-later { --due: var(--border); }
+.up-item.due-today, .up-item.due-tomorrow { background: color-mix(in srgb, var(--surface) 90%, var(--due)); }
+.up-item.due-today:hover, .up-item.due-tomorrow:hover { background: color-mix(in srgb, var(--surface) 82%, var(--due)); }
+.due-legend { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem 1rem; padding: 0; margin: .7rem 0 0;
+              font-size: .78rem; color: var(--muted); }
+.due-legend li { display: inline-flex; align-items: center; gap: .4rem; }
+.due-legend li::before { content: ""; width: .7rem; height: .7rem; border-radius: 3px;
+                         background: var(--due-soft); box-shadow: inset 0 0 0 1.5px var(--due); }
+.due-legend .due-later::before { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.due-tag { display: block; width: fit-content; margin-bottom: .15rem; padding: .05rem .4rem; border-radius: 4px;
+           font-size: .7rem; font-weight: 600; color: var(--due); background: var(--due-soft); }
+@media (prefers-color-scheme: dark) {
+  .due-today    { --due: #ef8a76; --due-soft: #3d221d; }
+  .due-tomorrow { --due: #f0a060; --due-soft: #3b2818; }
+  .due-3days    { --due: #e3c15c; --due-soft: #352d15; }
+  .due-week     { --due: #7fb0e6; --due-soft: #1a2838; }
+}
 .badge { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; font-weight: 500; padding: .15rem .5rem;
          border-radius: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .badge.ok { background: var(--accent-soft); color: var(--accent-ink); }

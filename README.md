@@ -43,7 +43,10 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   remove someone from the group, or **ban** them so they can never rejoin (until unbanned).
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).
 - **Add to home screen**: a button in the top bar (and on the sign-in screen) shows how to add ShareMap to an
-  iPhone or Android home screen; it then opens like an app with its own icon.
+  iPhone or Android home screen, or install it on a computer (Chrome or Edge); it then opens like an app with its own icon.
+  The guide also pops up once, the first time someone signs in on a browser.
+- **How soon an event is**: upcoming event cards and calendar chips are colored by when they start: red today, orange tomorrow,
+  yellow within 3 days, blue within a week, and plain after that (a legend is under the calendar). Past events are gray.
 
 ## Setup (about 15 minutes)
 

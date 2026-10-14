@@ -297,22 +297,23 @@ const isStandalone = () => matchMedia('(display-mode: standalone)').matches || n
 function refreshInstallButtons() {
   $$('.install-btn').forEach((b) => { b.hidden = isStandalone(); });
 }
-function phoneKind() {
+function deviceKind() {
   const ua = navigator.userAgent;
   if (/Android/i.test(ua)) return 'android';
   if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
-  return 'ios';
+  return 'desktop';
 }
-function installGuide(kind = phoneKind()) {
+function installGuide(kind = deviceKind()) {
   const steps = {
     ios: [['compass', 'install.ios1'], ['share-ios', 'install.ios2'], ['plus-square', 'install.ios3'], ['check', 'install.ios4']],
     android: [['compass', 'install.and1'], ['dots', 'install.and2'], ['plus-square', 'install.and3'], ['check', 'install.and4']],
+    desktop: [['compass', 'install.desk1'], ['plus-square', 'install.desk2'], ['check', 'install.desk3']],
   };
   const tab = (k) => `<button type="button" role="tab" data-kind="${k}" class="${k === kind ? 'on' : ''}" aria-selected="${k === kind}">${esc(t('install.' + k))}</button>`;
   const body = openModal(`
     <div class="modal-head"><h2>${esc(t('install.title'))}</h2>${closeBtn()}</div>
     ${installPrompt ? `<button class="primary install-now">${ic('phone-add')}${esc(t('install.now'))}</button>` : ''}
-    <div class="seg" role="tablist">${tab('ios')}${tab('android')}</div>
+    <div class="seg" role="tablist">${tab('ios')}${tab('android')}${tab('desktop')}</div>
     <ol class="steps">${steps[kind].map(([icon, key], i) => `
       <li><span class="step-n">${i + 1}</span><span class="step-ic">${ic(icon)}</span><span>${esc(t(key))}</span></li>`).join('')}
     </ol>
@@ -358,6 +359,11 @@ async function boot(user) {
   }
   await loadOrgs();
   enterOrg(state.orgId);
+  // Show the "add to home screen" guide once, the first time someone signs in on this browser
+  if (!isStandalone() && !store.get('fsm.installShown')) {
+    store.set('fsm.installShown', '1');
+    setTimeout(() => { if (!modal.open) installGuide(); }, 800);
+  }
 }
 
 async function loadOrgs() {
@@ -1242,7 +1248,7 @@ async function renderCalendar() {
     const cls = ['cal-day', d.getMonth() !== state.month.getMonth() && 'other', k === todayKey && 'today'].filter(Boolean).join(' ');
     const chips = evs.slice(0, 3).map((ev) => {
       const st = eventStats(ev);
-      const c = ['chip', st.full && 'full', st.mine && 'mine', ev.cancelled && 'cancelled'].filter(Boolean).join(' ');
+      const c = ['chip', ev.cancelled ? 'cancelled' : dueLevel(ev).cls, st.full && 'full', st.mine && 'mine'].filter(Boolean).join(' ');
       return `<button class="${c}" data-ev="${ev.id}" title="${esc(ev.title)}"><span class="t">${fmtTime(new Date(ev.starts_at))} </span>${esc(ev.title)}</button>`;
     }).join('');
     const more = evs.length > 3 ? `<span class="more">${esc(t('cal.more', { n: evs.length - 3 }))}</span>` : '';
@@ -1284,13 +1290,11 @@ function countHtml(ev) {
   return `<span>${ic('users', 'sm')}${cap}</span>${st.waitlist.length
     ? `<span>${ic('hourglass', 'sm')}${esc(t('count.waiting', { n: st.waitlist.length }))}</span>` : ''}`;
 }
-// Right side of an upcoming row: my status, or a one-tap Join button
+// Right side of an upcoming row: my status (joining is done from the event itself)
 function upAction(ev) {
   const st = eventStats(ev);
   if (!ev.cancelled && st.mine?.status === 'confirmed') return `<span class="badge ok">${ic('check', 'sm')}${esc(t('badge.joined'))}</span>`;
-  if (ev.cancelled || st.mine) return myBadge(ev);
-  if (!canJoin()) return '';
-  return `<button class="small ${st.full ? '' : 'primary'}" data-join="${ev.id}">${esc(t(st.full ? 'ev.joinWait' : 'ev.join'))}</button>`;
+  return myBadge(ev);
 }
 function spotsHtml(ev) {
   if (ev.cancelled || ev.capacity == null) return '';
@@ -1298,13 +1302,27 @@ function spotsHtml(ev) {
   return left > 0 ? `<span class="spots">${esc(t('up.left', { n: left }))}</span>`
     : `<span class="spots full">${esc(t('up.full'))}</span>`;
 }
+// How soon an event starts, in calendar days: today, tomorrow, within 3 days,
+// within a week, or later (or already over). Used to color event cards and calendar chips.
+function dueLevel(ev) {
+  if (new Date(ev.ends_at) < new Date()) return { cls: 'due-past', label: '' };
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((day(new Date(ev.starts_at)) - day(new Date())) / 86400000);
+  if (days <= 0) return { cls: 'due-today', label: t('due.today') };
+  if (days === 1) return { cls: 'due-tomorrow', label: t('due.tomorrow') };
+  if (days <= 3) return { cls: 'due-3days', label: t('due.inDays', { n: days }) };
+  if (days < 7) return { cls: 'due-week', label: t('due.inDays', { n: days }) };
+  return { cls: 'due-later', label: '' };
+}
 function upItem(ev) {
   const d = new Date(ev.starts_at);
   const place = state.places.find((p) => p.id === ev.place_id);
-  return `<div class="up-item" data-ev="${ev.id}">
-    <div class="up-date">${esc(fmtDate(d))}<div class="muted small">${esc(fmtTime(d))}</div></div>
+  const due = ev.cancelled ? { cls: 'due-off', label: '' } : dueLevel(ev);
+  return `<div class="up-item ${due.cls}" data-ev="${ev.id}">
+    <div class="up-date">${due.label ? `<span class="due-tag">${esc(due.label)}</span>` : ''}${esc(fmtDate(d))}<div class="muted small">${esc(fmtTime(d))}</div></div>
     <div class="up-main"><b>${esc(ev.title)}</b>
-      <div class="up-meta"><span>${ic('pin', 'sm')}${esc(place?.name || '')}</span>${countHtml(ev)}${spotsHtml(ev)}</div></div>
+      <div class="up-meta"><span>${ic('pin', 'sm')}${esc(place?.name || '')}</span>${countHtml(ev)}${spotsHtml(ev)}</div>
+      ${ev.description ? `<p class="up-desc">${esc(ev.description)}</p>` : ''}</div>
     <div class="up-act">${upAction(ev)}${ic('right', 'sm chev')}</div>
   </div>`;
 }
@@ -1316,19 +1334,7 @@ function renderUpcoming() {
   $('#upcoming').innerHTML = list.length ? list.map(upItem).join('')
     : `<div class="empty compact">${ic('calendar')}<span>${esc(t('cal.noUpcoming'))}</span></div>`;
 }
-$('#upcoming').addEventListener('click', async (e) => {
-  const join = e.target.closest('[data-join]');
-  if (join) {
-    const ev = state.events.find((x) => x.id === Number(join.dataset.join));
-    const full = eventStats(ev).full;
-    join.disabled = true;
-    try {
-      check(await sb.from('event_participants').insert({ event_id: ev.id }));
-      toast(t(full ? 'ev.addedWait' : 'ev.joined'));
-      await renderCalendar();
-    } catch (err) { console.error(err); join.disabled = false; }
-    return;
-  }
+$('#upcoming').addEventListener('click', (e) => {
   const it = e.target.closest('[data-ev]');
   if (it) eventDetail(Number(it.dataset.ev));
 });

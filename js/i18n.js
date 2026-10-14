@@ -58,7 +58,7 @@ const DICT = {
     'install.ios': 'iPhone / iPad', 'install.android': 'Android', 'install.ios1': 'Open this page in Safari',
     'install.ios2': 'Tap the Share button', 'install.ios3': 'Choose “Add to Home Screen”', 'install.ios4': 'Tap “Add”',
     'install.and1': 'Open this page in Chrome', 'install.and2': 'Tap the menu at the top right', 'install.and3': 'Choose “Add to Home screen” or “Install app”',
-    'install.and4': 'Tap “Install”', 'install.iosNote': 'The first time you open it from the icon, sign in once more.',
+    'install.and4': 'Tap “Install”', 'install.desktop': 'Computer', 'install.desk1': 'Open this page in Chrome or Edge', 'install.desk2': 'Click the install icon at the right end of the address bar (or the ⋮ menu → Install)', 'install.desk3': 'Click “Install”. ShareMap gets its own icon on your desktop', 'due.today': 'Today', 'due.tomorrow': 'Tomorrow', 'due.inDays': 'In {n} days', 'due.within3': 'Within 3 days', 'due.withinWeek': 'Within a week', 'due.later': 'Later', 'install.iosNote': 'The first time you open it from the icon, sign in once more.',
     emailPh: 'you@example.com',
 
     'setup.title': 'Setup needed',
@@ -79,7 +79,7 @@ const DICT = {
 
     'cal.today': 'Today', 'cal.new': 'New event', 'cal.upcoming': 'Upcoming (30 days)',
     'cal.more': '+{n} more', 'cal.noUpcoming': 'No upcoming events.',
-    'up.step1': 'Tap an event to see details and who is going', 'up.step2': 'Tap Join to sign up. If it is full you go on the waiting list and move up automatically',
+    'up.step1': 'Tap an event to see details and who is going', 'up.step2': 'Open an event and tap Join to sign up. If it is full you go on the waiting list and move up automatically',
     'up.step3': 'Events you joined show ✓ Joined', 'up.left': '{n} spots left', 'up.left_one': '1 spot left', 'up.full': 'Full · waiting list open', 'day.newHere': 'New event this day',
 
     'cats.title': 'Categories',
@@ -196,7 +196,7 @@ const DICT = {
     'install.ios': 'iPhone / iPad', 'install.android': 'Android', 'install.ios1': 'Safari でこのページを開く',
     'install.ios2': '共有ボタンをタップ', 'install.ios3': '「ホーム画面に追加」を選ぶ', 'install.ios4': '「追加」をタップ',
     'install.and1': 'Chrome でこのページを開く', 'install.and2': '右上のメニューをタップ', 'install.and3': '「ホーム画面に追加」または「アプリをインストール」を選ぶ',
-    'install.and4': '「インストール」をタップ', 'install.iosNote': 'アイコンから初めて開いたときは、もう一度ログインしてください。',
+    'install.and4': '「インストール」をタップ', 'install.desktop': 'パソコン', 'install.desk1': 'Chrome または Edge でこのページを開く', 'install.desk2': 'アドレスバー右端のインストールアイコンをクリック（または ⋮ メニュー → インストール）', 'install.desk3': '「インストール」をクリック。デスクトップに ShareMap のアイコンができます', 'due.today': '今日', 'due.tomorrow': '明日', 'due.inDays': '{n} 日後', 'due.within3': '3日以内', 'due.withinWeek': '1週間以内', 'due.later': 'それ以降', 'install.iosNote': 'アイコンから初めて開いたときは、もう一度ログインしてください。',
     emailPh: 'you@example.com',
 
     'setup.title': '初期設定が必要です',
@@ -217,7 +217,7 @@ const DICT = {
 
     'cal.today': '今日', 'cal.new': '新規イベント', 'cal.upcoming': '今後の予定（30日間）',
     'cal.more': '他 {n} 件', 'cal.noUpcoming': '今後の予定はありません。',
-    'up.step1': 'イベントをタップすると詳細と参加者が見られます', 'up.step2': '「参加する」で申し込み。満員ならキャンセル待ちになり、空きが出ると自動で繰り上がります',
+    'up.step1': 'イベントをタップすると詳細と参加者が見られます', 'up.step2': 'イベントを開いて「参加する」で申し込み。満員ならキャンセル待ちになり、空きが出ると自動で繰り上がります',
     'up.step3': '申し込んだイベントには ✓ 参加 が付きます', 'up.left': '残り {n} 名', 'up.full': '満員・キャンセル待ち受付中', 'day.newHere': 'この日にイベント作成',
 
     'cats.title': 'カテゴリ',
@@ -334,7 +334,7 @@ const DICT = {
     'install.ios': 'iPhone / iPad', 'install.android': 'Android', 'install.ios1': '用 Safari 開啟此頁面',
     'install.ios2': '點「分享」按鈕', 'install.ios3': '選擇「加入主畫面」', 'install.ios4': '點「加入」',
     'install.and1': '用 Chrome 開啟此頁面', 'install.and2': '點右上角的選單', 'install.and3': '選擇「加到主畫面」或「安裝應用程式」',
-    'install.and4': '點「安裝」', 'install.iosNote': '第一次從圖示開啟時，請再登入一次。',
+    'install.and4': '點「安裝」', 'install.desktop': '電腦', 'install.desk1': '用 Chrome 或 Edge 開啟此頁面', 'install.desk2': '點網址列右側的安裝圖示（或 ⋮ 選單 → 安裝）', 'install.desk3': '點「安裝」，桌面上就會出現 ShareMap 圖示', 'due.today': '今天', 'due.tomorrow': '明天', 'due.inDays': '{n} 天後', 'due.within3': '3 天內', 'due.withinWeek': '一週內', 'due.later': '更晚', 'install.iosNote': '第一次從圖示開啟時，請再登入一次。',
     emailPh: 'you@example.com',
 
     'setup.title': '需要設定',
@@ -355,7 +355,7 @@ const DICT = {
 
     'cal.today': '今天', 'cal.new': '新增活動', 'cal.upcoming': '近期活動（30 天內）',
     'cal.more': '還有 {n} 個', 'cal.noUpcoming': '近期沒有活動。',
-    'up.step1': '點活動可查看詳情和參加名單', 'up.step2': '點「參加」即可報名；額滿會自動排候補，有人退出時自動遞補',
+    'up.step1': '點活動可查看詳情和參加名單', 'up.step2': '打開活動後點「參加」即可報名；額滿會自動排候補，有人退出時自動遞補',
     'up.step3': '已報名的活動會顯示 ✓ 已參加', 'up.left': '剩 {n} 個名額', 'up.full': '已額滿・可排候補', 'day.newHere': '在這天新增活動',
 
     'cats.title': '分類',
@@ -472,7 +472,7 @@ const DICT = {
     'install.ios': 'iPhone / iPad', 'install.android': 'Android', 'install.ios1': '用 Safari 打开此页面',
     'install.ios2': '点击“分享”按钮', 'install.ios3': '选择“添加到主屏幕”', 'install.ios4': '点击“添加”',
     'install.and1': '用 Chrome 打开此页面', 'install.and2': '点击右上角的菜单', 'install.and3': '选择“添加到主屏幕”或“安装应用”',
-    'install.and4': '点击“安装”', 'install.iosNote': '第一次从图标打开时，请再登录一次。',
+    'install.and4': '点击“安装”', 'install.desktop': '电脑', 'install.desk1': '用 Chrome 或 Edge 打开此页面', 'install.desk2': '点击地址栏右侧的安装图标（或 ⋮ 菜单 → 安装）', 'install.desk3': '点击“安装”，桌面上就会出现 ShareMap 图标', 'due.today': '今天', 'due.tomorrow': '明天', 'due.inDays': '{n} 天后', 'due.within3': '3 天内', 'due.withinWeek': '一周内', 'due.later': '更晚', 'install.iosNote': '第一次从图标打开时，请再登录一次。',
     emailPh: 'you@example.com',
 
     'setup.title': '需要设置',
@@ -493,7 +493,7 @@ const DICT = {
 
     'cal.today': '今天', 'cal.new': '新建活动', 'cal.upcoming': '近期活动（30 天内）',
     'cal.more': '还有 {n} 个', 'cal.noUpcoming': '近期没有活动。',
-    'up.step1': '点活动可查看详情和报名名单', 'up.step2': '点「报名」即可参加；满员会自动排候补，有人退出时自动递补',
+    'up.step1': '点活动可查看详情和报名名单', 'up.step2': '打开活动后点「报名」即可参加；满员会自动排候补，有人退出时自动递补',
     'up.step3': '已报名的活动会显示 ✓ 已报名', 'up.left': '剩 {n} 个名额', 'up.full': '已满员・可排候补', 'day.newHere': '在这天新建活动',
 
     'cats.title': '分类',
