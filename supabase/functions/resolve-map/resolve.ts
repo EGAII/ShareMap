@@ -1,10 +1,12 @@
 // Find the coordinates behind a Google Maps link, for the map on place cards.
-// Only Google Maps hosts are ever fetched, so this cannot be used to reach other sites.
+// Only Google Maps links are followed (plus OpenStreetMap's Photon search), so this cannot be
+// used to reach other sites.
 
 export type Coords = { lat: number; lng: number; source: string };
 
 const MAPS_HOST = /^(maps\.app\.goo\.gl|goo\.gl|maps\.google\.[a-z.]+|(www\.)?google\.[a-z.]+|consent\.google\.[a-z.]+)$/i;
-const UA = 'Mozilla/5.0 (compatible; ShareMap/1.0; +https://github.com/EGAII/ShareMap)';
+const UA = 'Mozilla/5.0 (compatible; ShareMap/1.0; +https://github.com/EGAII/ShareMap)';   // for Google
+const APP_UA = 'ShareMap/1.0 (+https://github.com/EGAII/ShareMap)';   // for the OpenStreetMap searches
 const MAX_HOPS = 6;
 
 export function isMapsUrl(u: string): boolean {
@@ -39,15 +41,6 @@ export function coordsFromText(s: string, source = 'url'): Coords | null {
   return null;
 }
 
-// Coordinates inside a Google Maps page: the preview image link, or the initial map state ([zoom, lng, lat])
-function coordsFromPage(html: string): Coords | null {
-  const img = /staticmap\?center=(-?\d{1,2}\.\d+)(?:%2C|,)(-?\d{1,3}\.\d+)/i.exec(html);
-  if (img && valid(+img[1], +img[2])) return { lat: +img[1], lng: +img[2], source: 'page' };
-  const state = /APP_INITIALIZATION_STATE=\[\[\[[\d.]+,(-?\d{1,3}\.\d+),(-?\d{1,2}\.\d+)\]/.exec(html);
-  if (state && valid(+state[2], +state[1])) return { lat: +state[2], lng: +state[1], source: 'page' };
-  return null;
-}
-
 // A search text for the place: the q= / query= value, or the name in /maps/place/<name>/
 export function searchText(u: string): string {
   try {
@@ -61,21 +54,68 @@ export function searchText(u: string): string {
   }
 }
 
-// Last resort: look the name/address up in OpenStreetMap (Nominatim, about 1 request a second allowed)
-async function geocode(text: string): Promise<Coords | null> {
-  if (!text) return null;
-  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(text)}`;
+// Last resort: search the place in OpenStreetMap data with Photon (komoot's free search; Nominatim
+// refuses requests from Supabase's servers). A wrong map is worse than none, so a result is only used
+// when it is clearly the place:
+//   "Name, address" (usual share text): a hit for the name, or for the address, whose city/ward
+//                                        appears in the address
+//   name only:                           a hit with that name (exact first, else one name containing the other)
+// Photon returns unrelated places abroad for queries it doesn't understand, hence these checks.
+// (Google's page itself is not read: without a browser it shows a default map view, not the place.)
+type Hit = { lat: number; lng: number; name: string; areas: string[] };
+const CJK = /[぀-ヿ㐀-鿿]/;   // Japanese / Chinese characters
+const norm = (x: string) => x.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+
+async function photon(q: string, log: string[], limit = 8): Promise<Hit[]> {
+  const lang = CJK.test(q) ? '' : '&lang=en';
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept-Language': 'ja,en' } });
-    if (!res.ok) return null;
-    const [hit] = await res.json();
-    return hit && valid(+hit.lat, +hit.lon) ? { lat: +hit.lat, lng: +hit.lon, source: 'search' } : null;
-  } catch {
-    return null;
+    const res = await fetch(`https://photon.komoot.io/api/?limit=${limit}${lang}&q=${encodeURIComponent(q)}`,
+      { headers: { 'User-Agent': APP_UA } });
+    log.push(`photon "${q}": ${res.status}`);
+    if (!res.ok) return [];
+    const feats = (await res.json())?.features || [];
+    return feats.map((f: any) => {
+      const p = f.properties || {};
+      const [lng, lat] = f.geometry?.coordinates || [];
+      return { lat: +lat, lng: +lng, name: String(p.name || ''),
+               areas: [p.city, p.district, p.county, p.locality].filter(Boolean).map(String) };
+    }).filter((h: Hit) => valid(h.lat, h.lng));
+  } catch (err) {
+    log.push(`photon "${q}": ${err}`);
+    return [];
   }
 }
 
-export async function resolveMapUrl(start: string): Promise<Coords | null> {
+const inArea = (h: Hit, address: string) => {
+  const a = norm(address);
+  return h.areas.some((x) => norm(x).length > 1 && a.includes(norm(x).replace(/(city|ward|-ku|区|市)$/u, '')));
+};
+const done = (h: Hit | undefined): Coords | null => (h ? { lat: h.lat, lng: h.lng, source: 'search' } : null);
+
+async function geocode(text: string, log: string[]): Promise<Coords | null> {
+  const parts = text.split(/[,、，]/).map((p) => p.trim()).filter(Boolean);
+  const name = parts[0] || '';
+  const address = parts.slice(1).filter((p) => !/^(japan|日本)$/i.test(p)).join(' ');
+  if (!name) return null;
+  if (!address) {
+    const hits = await photon(name, log, 5);
+    const n = norm(name);
+    return done(hits.find((h) => norm(h.name) === n)
+      || hits.find((h) => norm(h.name).length > 1 && (n.includes(norm(h.name)) || norm(h.name).includes(n))));
+  }
+  const byName = (await photon(name, log)).find((h) => inArea(h, address));
+  if (byName) return done(byName);
+  // The street without the house number, e.g. 東京都渋谷区道玄坂2丁目29-8 → 東京都渋谷区道玄坂
+  const street = address.replace(/\b\d{3}-?\d{4}\b/g, '').replace(/[\d０-９\-－−ー丁目番地号]+$/u, '').trim();
+  for (const q of [...new Set([address, street])]) {
+    if (q.length < 3) continue;
+    const hit = (await photon(q, log, 5)).find((h) => inArea(h, address));
+    if (hit) return done(hit);
+  }
+  return null;
+}
+
+export async function resolveMapUrl(start: string, log: string[] = []): Promise<Coords | null> {
   if (!isMapsUrl(start)) return null;
   let url = start;
   let lastSearch = searchText(url);
@@ -87,7 +127,9 @@ export async function resolveMapUrl(start: string): Promise<Coords | null> {
     let res: Response;
     try {
       res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': UA, 'Accept-Language': 'ja,en' } });
-    } catch {
+      log.push(`${res.status} ${url}`);
+    } catch (err) {
+      log.push(`fetch failed ${url}: ${err}`);
       break;   // Google unreachable: fall back to the name search below
     }
     const next = res.headers.get('location');
@@ -101,14 +143,8 @@ export async function resolveMapUrl(start: string): Promise<Coords | null> {
       url = target;
       continue;
     }
-    if (res.ok) {
-      const html = (await res.text()).slice(0, 2_000_000);
-      const inPage = coordsFromPage(html);
-      if (inPage) return inPage;
-    } else {
-      await res.body?.cancel();
-    }
+    await res.body?.cancel();
     break;
   }
-  return geocode(lastSearch);
+  return geocode(lastSearch, log);
 }

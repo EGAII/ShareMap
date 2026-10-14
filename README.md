@@ -120,6 +120,11 @@ Your project ref is the `xxxx` part of `https://xxxx.supabase.co`. After that, n
 saved, and older ones are filled in automatically when their owner or the group owner opens the Places tab.
 Without the function, long Google Maps links still get a map and the rest show the generated pattern.
 
+When a link has no coordinates, the function searches the place name in OpenStreetMap data (Photon) and only
+accepts a result in the city/ward from the share text's address, or with a matching name. If it isn't sure it
+returns nothing and the card keeps the pattern; a link with only a name (no address) can still match a
+same-named place elsewhere. If a card looks wrong, edit the place and paste the full Google Maps "Share" text.
+
 ### 6. Start using it
 
 Sign in, create your organization, then open the **Members** tab and share the invite code or link.

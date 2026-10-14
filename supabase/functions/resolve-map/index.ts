@@ -23,8 +23,9 @@ Deno.serve(async (req) => {
   }
   if (!isMapsUrl(url)) return json({ error: 'Not a Google Maps link' }, 400);
   try {
-    const found = await resolveMapUrl(url);
-    return found ? json(found) : json({ error: 'No location found' }, 404);
+    const tried: string[] = [];   // what was looked at, returned when nothing is found
+    const found = await resolveMapUrl(url, tried);
+    return found ? json(found) : json({ error: 'No location found', tried }, 404);
   } catch (err) {
     console.error(err);
     return json({ error: 'Lookup failed' }, 502);
