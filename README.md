@@ -44,7 +44,8 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).
 - **Add to home screen**: a button in the top bar (and on the sign-in screen) shows how to add ShareMap to an
   iPhone or Android home screen, or install it on a computer (Chrome or Edge); it then opens like an app with its own icon.
-  The guide also pops up once, the first time someone signs in on a browser.
+  The guide also pops up once, the first time someone signs in on a browser, right after a short tour
+  (dashed box + arrow + OK) of the main buttons. The footer shows the version (the `?v=` number in index.html) and the maker.
 - **Ranking**: two lists, this month and this year (they start over on the 1st and on January 1, Japan time), each with
   the top 10 members by events attended (past, not-cancelled dates where they had a confirmed spot),
   with gold, silver and bronze for 1st to 3rd and ties sharing a place. Your own place is shown below the list.

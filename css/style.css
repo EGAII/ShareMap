@@ -629,6 +629,28 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
 .modal-head h2 { margin: 0 0 .3rem; font-size: 1.4rem; letter-spacing: -.02em; }
 .modal-head .ghost { margin: -.4rem -.6rem 0 0; }
 .modal-foot { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.25rem; }
+/* Footer: app name, version, maker */
+.site-foot { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 2rem; text-align: center;
+             font-size: .78rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* First-visit tour: dashed box around a button, an arrow to it, and a note with OK */
+.tour { position: fixed; inset: 0; z-index: calc(var(--z-toast) - 1); }
+.tour-box { position: absolute; border: 2px dashed var(--accent); border-radius: var(--r-md); pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(28, 24, 18, .52); transition: left .3s var(--ease), top .3s var(--ease),
+            width .3s var(--ease), height .3s var(--ease); }
+.tour-arrow { position: absolute; width: 0; border-left: 2px dashed var(--accent-text); transform: translateX(-1px); pointer-events: none; }
+.tour-arrow::before { content: ""; position: absolute; left: -7px; border: 6px solid transparent; }
+.tour-arrow.up::before { top: -8px; border-bottom: 8px solid var(--accent-text); border-top: 0; }
+.tour-arrow.down::before { bottom: -8px; border-top: 8px solid var(--accent-text); border-bottom: 0; }
+.tour-card { position: absolute; width: min(320px, calc(100vw - 24px)); padding: 1rem 1.1rem .9rem; border-radius: var(--r-lg);
+             background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg), inset 0 0 0 1px var(--border); }
+.tour-card.in { animation: rise .3s var(--ease) both; }
+.tour-step { margin: 0 0 .25rem; font-size: .75rem; font-weight: 600; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.tour-text { margin: 0; font-size: .93rem; line-height: 1.5; }
+.tour-actions { display: flex; justify-content: flex-end; gap: .4rem; margin-top: .85rem; }
+.tour-actions .primary { min-width: 5rem; }
+@media (prefers-reduced-motion: reduce) { .tour-box { transition: none; } .tour-card.in { animation: none; } }
+
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: .5rem;

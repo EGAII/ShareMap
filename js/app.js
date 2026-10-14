@@ -359,11 +359,6 @@ async function boot(user) {
   }
   await loadOrgs();
   enterOrg(state.orgId);
-  // Show the "add to home screen" guide once, the first time someone signs in on this browser
-  if (!isStandalone() && !store.get('fsm.installShown')) {
-    store.set('fsm.installShown', '1');
-    setTimeout(() => { if (!modal.open) installGuide(); }, 800);
-  }
 }
 
 async function loadOrgs() {
@@ -421,6 +416,7 @@ async function enterOrg(id) {
     $('#org-select').hidden = true;
     renderOnboarding($('#onboard-card'));
     showOnly('view-onboard');
+    setTimeout(firstVisitGuides, 700);
     return;
   }
   $('#tabs').hidden = false;
@@ -429,8 +425,96 @@ async function enterOrg(id) {
   $('#upcoming').innerHTML = skeletons('row-sk', 3);
   $('#cal-grid').innerHTML = '';
   await loadBase();
-  switchView(state.view);
+  await switchView(state.view);
+  setTimeout(firstVisitGuides, 500);
 }
+
+// ---------------------------------------------------------------------
+// First visit on this browser: a guided tour of the main buttons (once a
+// group is open), then the "add to home screen" guide. Each runs once.
+// ---------------------------------------------------------------------
+function firstVisitGuides() {
+  if (modal.open || $('.tour')) return;
+  if (state.orgId && !store.get('fsm.tourDone')) return startTour(firstVisitGuides);
+  if (!isStandalone() && !store.get('fsm.installShown')) {
+    store.set('fsm.installShown', '1');
+    installGuide();
+  }
+}
+// What each step points at; steps whose button is hidden (e.g. owner-only tabs) are skipped
+const TOUR = [
+  ['#tabs [data-view="places"]', 'tour.places'],
+  ['#tabs [data-view="calendar"]', 'tour.events'],
+  ['#tabs [data-view="ranking"]', 'tour.ranking'],
+  ['#tabs [data-view="org"]', 'tour.members'],
+  ['#tabs [data-view="admin"]', 'tour.admin'],
+  ['#org-select', 'tour.groups'],
+  ['.topbar-end .install-btn', 'tour.install'],
+  ['.topbar-end .lang-select', 'tour.lang'],
+];
+function startTour(done) {
+  const steps = TOUR.filter(([sel]) => $(sel)?.getClientRects().length);
+  if (!steps.length) return done();
+  const layer = document.createElement('div');
+  layer.className = 'tour';
+  layer.innerHTML = `<div class="tour-box"></div><div class="tour-arrow"></div>
+    <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-text">
+      <p class="tour-step"></p><p class="tour-text" id="tour-text"></p>
+      <div class="tour-actions">
+        <button type="button" class="ghost small" data-tour="skip">${esc(t('tour.skip'))}</button>
+        <button type="button" class="primary small" data-tour="ok"></button>
+      </div>
+    </div>`;
+  document.body.append(layer);
+  const box = $('.tour-box', layer), arrow = $('.tour-arrow', layer), card = $('.tour-card', layer);
+  let i = 0;
+  const place = () => {
+    const el = $(steps[i][0]);
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const r = el.getBoundingClientRect();
+    const pad = 6, gap = 34, edge = 12;
+    Object.assign(box.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`,
+      width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+    // The note goes below the button, or above it when there is no room
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    const below = r.bottom + pad + gap + ch + edge <= innerHeight;
+    const cx = r.left + r.width / 2;
+    card.style.left = `${Math.min(Math.max(cx - cw / 2, edge), innerWidth - cw - edge)}px`;
+    card.style.top = below ? `${r.bottom + pad + gap}px` : `${r.top - pad - gap - ch}px`;
+    arrow.className = `tour-arrow ${below ? 'up' : 'down'}`;
+    Object.assign(arrow.style, { left: `${cx}px`, top: `${below ? r.bottom + pad + 4 : r.top - pad - gap + 4}px`, height: `${gap - 8}px` });
+  };
+  const show = () => {
+    $('.tour-step', layer).textContent = t('tour.step', { n: i + 1, total: steps.length });
+    $('.tour-text', layer).textContent = t(steps[i][1]);
+    $('[data-tour="ok"]', layer).textContent = t(i === steps.length - 1 ? 'tour.done' : 'tour.ok');
+    place();
+    card.classList.remove('in'); void card.offsetWidth; card.classList.add('in');
+    $('[data-tour="ok"]', layer).focus();
+  };
+  const finish = () => {
+    store.set('fsm.tourDone', '1');
+    layer.remove();
+    removeEventListener('resize', place);
+    document.removeEventListener('keydown', onKey, true);
+    done();
+  };
+  const next = () => { if (++i < steps.length) show(); else finish(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); finish(); }
+    else if (e.key === 'Tab') { e.preventDefault(); layer.querySelector(document.activeElement?.dataset.tour === 'ok' ? '[data-tour="skip"]' : '[data-tour="ok"]').focus(); }
+  };
+  layer.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tour]');
+    if (b) (b.dataset.tour === 'ok' ? next : finish)();
+  });
+  addEventListener('resize', place);
+  document.addEventListener('keydown', onKey, true);
+  show();
+}
+
+// Footer version = the ?v= number on this script tag (bumped on every release)
+$('#app-version').textContent = 'v' + (new URL(document.currentScript?.src || location.href).searchParams.get('v') || 'dev');
 
 function renderOrgSelect() {
   $('#org-select').innerHTML = state.orgs.map((o) =>
