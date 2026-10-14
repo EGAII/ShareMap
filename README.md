@@ -15,9 +15,11 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   To add a language, copy a block in [`js/i18n.js`](js/i18n.js).
 - **Places**: paste a Google Maps share link (or the whole "Share" text; the name fills in automatically).
   Clicking a place opens it in Google Maps (on phones it opens in the Google Maps app).
-- **Place covers**: each place gets a generated map-style cover in its category's colour, showing the
-  place name and the next time something is planned there (date and time follow the chosen language).
-  Click the time to jump to that event. No external image service, no cost.
+- **Place covers**: each place shows a small OpenStreetMap map centered on it, in its category's colour,
+  with the place name and the next time something is planned there (date and time follow the chosen language).
+  Click the time to jump to that event. No images are stored: the map squares load from openstreetmap.org,
+  and the location comes from the Google Maps link (see step 5 below). Places whose location can't be found
+  show a generated map-style pattern instead.
 - **Categories**: two levels (main category → sub-category), e.g. `Food › Ramen`. Only the organization's owner
   can add, rename or delete them; other members don't see the Categories tab.
 - **Adding places**: each member can add 1 place a day (Japan time); organizers can add 2. The owner has no limit. A place can be edited or deleted only by the person who added it, or by the owner.
@@ -102,7 +104,23 @@ When you pull a new version, open **SQL Editor → New query**, paste the whole 
 [`supabase/schema.sql`](supabase/schema.sql) again and click **Run**. It is safe to run more than once and keeps
 your data.
 
-### 5. Start using it
+### 5. Maps on place cards (optional)
+
+Short Google Maps share links (`maps.app.goo.gl/…`) don't contain the location, so a small Edge Function
+([`supabase/functions/resolve-map`](supabase/functions/resolve-map)) follows the link and returns the
+coordinates. It only opens Google Maps links and never writes to the database. Deploy it once with the
+[Supabase CLI](https://supabase.com/docs/guides/cli):
+
+```bash
+npx supabase login
+npx supabase functions deploy resolve-map --project-ref <your-project-ref>
+```
+
+Your project ref is the `xxxx` part of `https://xxxx.supabase.co`. After that, new places get a map when
+saved, and older ones are filled in automatically when their owner or the group owner opens the Places tab.
+Without the function, long Google Maps links still get a map and the rest show the generated pattern.
+
+### 6. Start using it
 
 Sign in, create your organization, then open the **Members** tab and share the invite code or link.
 

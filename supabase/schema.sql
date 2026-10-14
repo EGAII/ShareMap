@@ -285,6 +285,10 @@ create table if not exists public.places (
   created_at  timestamptz not null default now()
 );
 create index if not exists places_org_idx on public.places(org_id);
+-- Where the place is, for the small map on its card (filled from the Google Maps link
+-- by the resolve-map Edge Function; empty = show the drawn pattern instead)
+alter table public.places add column if not exists lat double precision check (lat between -90 and 90);
+alter table public.places add column if not exists lng double precision check (lng between -180 and 180);
 
 -- Places a member may add per day (Japan time): 1, or 2 for organizers.
 -- null = no limit (the owner).

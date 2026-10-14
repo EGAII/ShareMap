@@ -43,6 +43,23 @@ function isGoogleMapsUrl(u) {
       || (/^(www\.)?google\./.test(h) && x.pathname.startsWith('/maps'));
   } catch { return false; }
 }
+// Coordinates written in a long Google Maps link (!3d..!4d.. pin, @lat,lng, or q=lat,lng)
+function coordsFromUrl(u) {
+  const s = String(u).replace(/%2C/gi, ',');
+  const m = /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/.exec(s) || /@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/.exec(s)
+    || /[?&](?:q|ll|query|center|destination)=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/i.exec(s);
+  return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null;
+}
+// Short share links don't contain the location; the resolve-map Edge Function follows them
+async function findCoords(url) {
+  const direct = coordsFromUrl(url);
+  if (direct) return direct;
+  if (!isGoogleMapsUrl(url)) return null;
+  try {
+    const { data, error } = await sb.functions.invoke('resolve-map', { body: { url } });
+    return !error && Number.isFinite(data?.lat) && Number.isFinite(data?.lng) ? { lat: data.lat, lng: data.lng } : null;
+  } catch { return null; }
+}
 // Google Maps "Share" often copies "Place name\naddress\nhttps://maps.app.goo.gl/xxx"
 function parseShareText(text) {
   const m = text.match(/https?:\/\/\S+/);
@@ -586,6 +603,30 @@ async function loadBase() {
   state.places = check(places);
   state.members = check(members).sort((a, b) => memberRank(a) - memberRank(b));   // stable: keeps join order within a group
   await loadNext().catch(() => {});
+  fillMissingCoords();
+}
+// Older places (added before maps existed) get their location filled in the background,
+// a few at a time, by whoever may edit them; each place is tried once per page load.
+const coordsTried = new Set();
+let fillingCoords = false;
+async function fillMissingCoords() {
+  if (fillingCoords) return;
+  fillingCoords = true;
+  try {
+    const org = state.orgId;
+    const todo = state.places.filter((p) => p.lat == null && canEditPlace(p) && !coordsTried.has(p.id)).slice(0, 5);
+    let changed = false;
+    for (const p of todo) {
+      coordsTried.add(p.id);
+      const c = await findCoords(p.map_url);
+      if (!c || org !== state.orgId) continue;
+      const { error } = await sb.from('places').update({ lat: c.lat, lng: c.lng }).eq('id', p.id);
+      if (!error) { Object.assign(p, c); changed = true; }
+    }
+    if (changed && state.view === 'places') renderPlaceList();
+  } finally {
+    fillingCoords = false;
+  }
 }
 // Member lists: owner first, then organizers, regular members, and guests last
 const memberRank = (m) => (m.role === 'owner' ? 0 : m.profiles?.is_guest ? 3 : m.organizer ? 1 : 2);
@@ -805,6 +846,9 @@ function renderPlaceList() {
   } else if (!tiles && !shown) {
     html = `<div class="empty compact">${ic(state.search ? 'search' : 'folder')}<span>${esc(t('places.empty'))}</span></div>`;
   }
+  if (lists.some((l) => l.places.some(hasMap))) {
+    html += `<p class="map-credit">${esc(t('places.mapCredit'))} <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></p>`;
+  }
   $('#place-list').innerHTML = html;
   // Pick up events created since the last look (at most every 10 s)
   if (Date.now() - state.nextAt > 10_000) {
@@ -838,6 +882,34 @@ function catHue(cat) {
 }
 const coverHue = (place) => catHue(catById(place.category_id));
 // Contour lines + a pin, deterministic per place name
+// A small OpenStreetMap map behind the card, centered on the place. The map squares are
+// loaded from openstreetmap.org each time (nothing is stored); 3 x 2 squares of 256 px
+// cover any card size, with the place a little above the middle (clear of the name).
+const MAP_ZOOM = 16;
+function mapArt(lat, lng) {
+  const size = 256, n = 2 ** MAP_ZOOM;
+  const x = (lng + 180) / 360 * n * size;
+  const r = lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n * size;
+  const tx = Math.floor(x / size), ty = Math.floor(y / size);
+  const top = y - ty * size < size / 2 ? ty - 1 : ty;   // the row of squares nearer the place
+  let imgs = '';
+  for (let dy = 0; dy < 2; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const X = (((tx + dx) % n) + n) % n, Y = top + dy;
+      if (Y < 0 || Y >= n) continue;
+      imgs += `<img src="https://tile.openstreetmap.org/${MAP_ZOOM}/${X}/${Y}.png" style="left:${(dx + 1) * size}px;top:${dy * size}px"
+        alt="" loading="lazy" decoding="async" referrerpolicy="strict-origin-when-cross-origin">`;
+    }
+  }
+  const ox = (x - (tx - 1) * size).toFixed(1), oy = (y - top * size).toFixed(1);
+  return `<div class="osm" aria-hidden="true">
+      <div class="osm-tiles" style="left:calc(50% - ${ox}px);top:calc(42% - ${oy}px);transform-origin:${ox}px ${oy}px">${imgs}</div>
+      <span class="osm-pin"></span>
+    </div>`;
+}
+const hasMap = (p) => p.lat != null && p.lng != null;
+
 function coverArt(place) {
   const rnd = seeded(hashStr(place.name));
   const W = 400, H = 200;
@@ -880,8 +952,8 @@ function placeCard(p) {
   const by = state.members.find((m) => m.user_id === p.created_by)?.profiles?.display_name;
   return `
     <article class="place-card">
-      <div class="cover ${coverHue(p)}">
-        ${coverArt(p)}
+      <div class="cover ${coverHue(p)} ${hasMap(p) ? 'has-map' : ''}">
+        ${hasMap(p) ? mapArt(p.lat, p.lng) : coverArt(p)}
         <div class="cover-top">
           ${cat ? `<span class="cover-cat">${esc(cat)}</span>` : '<span></span>'}
           ${ic('out', 'go')}
@@ -978,6 +1050,14 @@ function placeForm(place = null) {
       category_id: f.category_id.value ? Number(f.category_id.value) : null,
       note: f.note.value.trim(),
     };
+    // Look up where it is for the card's map (only when the link is new or changed)
+    if (!place || place.map_url !== url || place.lat == null) {
+      const btn = $('button.primary', f);
+      btn.disabled = true;
+      const c = await findCoords(url);
+      btn.disabled = false;
+      Object.assign(row, { lat: c?.lat ?? null, lng: c?.lng ?? null });
+    }
     if (place) check(await sb.from('places').update(row).eq('id', place.id));
     else check(await sb.from('places').insert({ ...row, org_id: state.orgId }));
     closeModal();
