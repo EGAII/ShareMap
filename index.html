@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@500;600&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=12">
+  <link rel="stylesheet" href="css/style.css?v=16">
 </head>
 <body>
   <!-- Icon set (stroke icons, 1.75 weight) -->
@@ -65,6 +65,7 @@
     <nav class="tabs" id="tabs" aria-label="Sections">
       <button data-view="places" class="active" data-i18n="nav.places"></button>
       <button data-view="calendar" data-i18n="nav.calendar"></button>
+      <button data-view="ranking" data-i18n="nav.ranking"></button>
       <button data-view="categories" data-i18n="nav.categories" data-owner-only hidden></button>
       <button data-view="org" data-i18n="nav.org"></button>
       <button data-view="admin" data-i18n="nav.admin" data-owner-only hidden></button>
@@ -183,12 +184,37 @@
       </div>
     </section>
 
+    <!-- Ranking: top 10 by events attended, then my own place -->
+    <section class="view" id="view-ranking" hidden>
+      <div class="rank-wrap">
+        <h1 data-i18n="rank.title"></h1>
+        <p class="muted rank-intro" data-i18n="rank.intro"></p>
+        <div class="seg rank-switch" role="tablist">
+          <button type="button" role="tab" data-period="month" data-i18n="rank.month"></button>
+          <button type="button" role="tab" data-period="year" data-i18n="rank.year"></button>
+        </div>
+        <section class="rank-panel" data-period="month" role="tabpanel">
+          <p class="muted small rank-period"></p>
+          <ol class="rank-list"></ol>
+          <div class="rank-me" hidden></div>
+        </section>
+        <section class="rank-panel" data-period="year" role="tabpanel" hidden>
+          <p class="muted small rank-period"></p>
+          <ol class="rank-list"></ol>
+          <div class="rank-me" hidden></div>
+        </section>
+      </div>
+    </section>
+
     <!-- Permissions (owner only) -->
     <section class="view" id="view-admin" hidden>
       <div class="page-head"><h1 data-i18n="admin.title"></h1></div>
       <p class="muted" data-i18n="admin.intro"></p>
       <div class="card">
-        <h2 data-i18n="admin.members"></h2>
+        <div class="card-head">
+          <h2 data-i18n="admin.members"></h2>
+          <div class="perm-tools" id="perm-tools"></div>
+        </div>
         <ul id="admin-list" class="plain-list admin-list"></ul>
       </div>
       <div class="card">
@@ -261,7 +287,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="js/config.js"></script>
-  <script src="js/i18n.js?v=12"></script>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/i18n.js?v=16"></script>
+  <script src="js/app.js?v=16"></script>
 </body>
 </html>

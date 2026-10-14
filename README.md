@@ -39,12 +39,15 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   deleted automatically 7 days after joining its first group (checked every hour), together with its sign-ups;
   the event history keeps the record. Signing out of a guest account loses it.
 - **Owner controls**: the organization's owner can remove anyone's sign-up and delete any event (it is recorded in the event's history). On the **Permissions** page (only the
-  owner sees it) the owner can make a member an *Organizer*, turn off *Can create events* or *Can join events*,
+  owner sees it) the owner taps **Edit** to tick *Organizer*, *Create events* and *Join events* for each member, then ✔ to save (× to discard),
   remove someone from the group, or **ban** them so they can never rejoin (until unbanned).
 - **Private**: you can only see an organization's data if you're a member (enforced by database rules).
 - **Add to home screen**: a button in the top bar (and on the sign-in screen) shows how to add ShareMap to an
   iPhone or Android home screen, or install it on a computer (Chrome or Edge); it then opens like an app with its own icon.
   The guide also pops up once, the first time someone signs in on a browser.
+- **Ranking**: two lists, this month and this year (they start over on the 1st and on January 1, Japan time), each with
+  the top 10 members by events attended (past, not-cancelled dates where they had a confirmed spot),
+  with gold, silver and bronze for 1st to 3rd and ties sharing a place. Your own place is shown below the list.
 - **How soon an event is**: upcoming event cards and calendar chips are colored by when they start: red today, orange tomorrow,
   yellow within 3 days, blue within a week, and plain after that (a legend is under the calendar). Past events are gray.
 

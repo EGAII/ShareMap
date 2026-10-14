@@ -800,6 +800,44 @@ create policy el_select on public.event_log for select to authenticated using (p
 revoke insert, update, delete, truncate on public.event_log from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+-- Ranking: how many events each current member attended this month or this
+-- year (p_period = 'month' | 'year', Japan time, so it resets on the 1st /
+-- on January 1). Counts dates that started in the period, are over, were not
+-- cancelled, and where the member themself (not a guest they brought) had a
+-- confirmed spot. Ties share a place (1, 1, 3).
+-- ---------------------------------------------------------------------
+drop function if exists public.org_ranking(bigint);
+create or replace function public.org_ranking(p_org bigint, p_period text default 'month')
+returns table(user_id uuid, display_name text, attended int, place int)
+language sql stable security definer set search_path = public as $$
+  with since as (
+    select date_trunc(case when p_period = 'year' then 'year' else 'month' end,
+                      now() at time zone 'Asia/Tokyo') at time zone 'Asia/Tokyo' as t
+  ), spots as (
+    select p.user_id, p.guest_name, e.capacity,
+           row_number() over (partition by p.event_id order by p.joined_at, p.id) as pos
+    from public.event_participants p
+    join public.events e on e.id = p.event_id
+    where e.org_id = p_org and e.ends_at < now() and not e.cancelled
+      and e.starts_at >= (select t from since)
+  ), done as (
+    select s.user_id, count(*)::int as n
+    from spots s
+    where s.guest_name = '' and (s.capacity is null or s.pos <= s.capacity)
+    group by s.user_id
+  )
+  select m.user_id, coalesce(pr.display_name, ''), coalesce(d.n, 0),
+         (rank() over (order by coalesce(d.n, 0) desc))::int
+  from public.org_members m
+  join public.profiles pr on pr.id = m.user_id
+  left join done d on d.user_id = m.user_id
+  where m.org_id = p_org and public.is_org_member(p_org)
+  order by 4, 2;
+$$;
+revoke execute on function public.org_ranking(bigint, text) from public, anon;
+grant execute on function public.org_ranking(bigint, text) to authenticated;
+
 -- Guest accounts are deleted guest_days() after joining their first group
 -- (or after signing in, if they never joined one). Their sign-ups are
 -- removed first so the event history still shows their name.

@@ -503,6 +503,53 @@ button.when:hover { background: var(--surface); border-color: transparent; }
   .due-3days    { --due: #e3c15c; --due-soft: #352d15; }
   .due-week     { --due: #7fb0e6; --due-soft: #1a2838; }
 }
+/* ---------------------------------------------------------------- Ranking */
+:root {
+  --gold: #9a7300;   --gold-soft: #f7ecc8;
+  --silver: #636c78; --silver-soft: #e9ecef;
+  --bronze: #96562a; --bronze-soft: #f4e2d3;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gold: #e8c45a;   --gold-soft: #3a3016;
+    --silver: #c3cad3; --silver-soft: #2b2e33;
+    --bronze: #e0a070; --bronze-soft: #3a2719;
+  }
+}
+/* One centered column: title, intro, This month / This year switch, then the list */
+.rank-wrap { max-width: 560px; margin: 0 auto; text-align: center; }
+.rank-wrap h1 { margin: 0 0 .35rem; }
+.rank-intro { margin: 0 auto 1.1rem; max-width: 52ch; }
+.rank-switch { max-width: 320px; margin: 0 auto 1rem; }
+.rank-panel { text-align: left; }
+.rank-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1px;
+             background: var(--border); border-radius: var(--r-md); overflow: hidden; box-shadow: 0 0 0 1px var(--border); }
+.rank-list:has(.empty) { background: none; box-shadow: none; }
+.rank-row { display: grid; grid-template-columns: 2rem auto minmax(0, 1fr) auto; align-items: center; gap: .75rem;
+            padding: .7rem 1.1rem; background: var(--surface); animation: rise .3s var(--ease) both; }
+.rank-place { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%;
+              font-weight: 700; font-size: .9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rank-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-count { color: var(--muted); font-size: .88rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank-row.gold   { --medal: var(--gold);   --medal-soft: var(--gold-soft); }
+.rank-row.silver { --medal: var(--silver); --medal-soft: var(--silver-soft); }
+.rank-row.bronze { --medal: var(--bronze); --medal-soft: var(--bronze-soft); }
+.rank-row:is(.gold, .silver, .bronze) { background: color-mix(in srgb, var(--surface) 65%, var(--medal-soft)); }
+.rank-row:is(.gold, .silver, .bronze) .rank-place { color: var(--medal); background: var(--medal-soft);
+                                                    box-shadow: inset 0 0 0 2px var(--medal); }
+.rank-row:is(.gold, .silver, .bronze) .rank-count { color: var(--medal); font-weight: 600; }
+.rank-row.gold .rank-name { font-weight: 700; }
+.rank-row.is-me { box-shadow: inset 3px 0 0 var(--accent); }
+.rank-period { margin: 0 0 .7rem; text-align: center; }
+.rank-me { margin-top: 1.5rem; padding-top: 1.1rem; border-top: 1px dashed var(--border); }
+.rank-me-label { font-size: .85rem; font-weight: 600; color: var(--muted); margin-bottom: .5rem; }
+.rank-me .rank-row:not(.gold, .silver, .bronze) { background: var(--accent-soft); }
+.rank-me .rank-row:not(.gold, .silver, .bronze) .rank-place { color: var(--accent-ink); }
+.rank-me .avatar { background: var(--surface); }
+.rank-list .rank-row:nth-child(2) { animation-delay: 30ms; } .rank-list .rank-row:nth-child(3) { animation-delay: 60ms; }
+.rank-list .rank-row:nth-child(4) { animation-delay: 90ms; } .rank-list .rank-row:nth-child(n+5) { animation-delay: 120ms; }
+@media (prefers-reduced-motion: reduce) { .rank-row { animation: none; } }
+
 .badge { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; font-weight: 500; padding: .15rem .5rem;
          border-radius: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .badge.ok { background: var(--accent-soft); color: var(--accent-ink); }
@@ -627,7 +674,21 @@ dialog::backdrop { background: rgba(28, 24, 18, .42); backdrop-filter: blur(3px)
 /* Permissions page */
 .block { display: block; margin-top: .1rem; }
 .admin-list li { align-items: flex-start; }
-.admin-list .perms { margin-left: 0; flex: 1 1 260px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .6rem; }
+.card-head h2 { margin: 0; }
+.perm-tools { display: flex; gap: .35rem; }
+/* Edit mode: name, then one centered checkbox column per permission; labels only in the header row */
+.admin-list.editing li { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 5.5rem); align-items: center; gap: .5rem; }
+.admin-list.editing .perm-head { padding: 0 0 .45rem; border-top: none; font-size: .78rem; font-weight: 600; color: var(--muted);
+                         text-align: center; line-height: 1.25; align-items: end; }
+.admin-list .perm-head + li { border-top: 1px solid var(--border); }
+.perm-cell { display: grid; place-items: center; }
+.perm-cell input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.perm-cell input:disabled { cursor: not-allowed; opacity: .55; }
+@media (max-width: 520px) {
+  .admin-list.editing li { grid-template-columns: minmax(0, 1fr) repeat(3, 3.6rem); gap: .25rem; }
+  .admin-list.editing .avatar { display: none; }
+}
 .btn-row.tight { margin-top: 0; gap: .4rem; }
 
 /* Upcoming: how-to-join guide and row actions */

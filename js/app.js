@@ -514,10 +514,11 @@ $('#tabs').addEventListener('click', (e) => {
   if (b) switchView(b.dataset.view);
 });
 function switchView(v) {
-  if (!['places', 'calendar', 'categories', 'org', 'admin'].includes(v)) v = 'places';
+  if (!['places', 'calendar', 'ranking', 'categories', 'org', 'admin'].includes(v)) v = 'places';
   // Only the owner manages categories and permissions; others don't see these tabs
   $$('#tabs [data-owner-only]').forEach((b) => { b.hidden = !isAdmin(); });
   if ((v === 'categories' || v === 'admin') && !isAdmin()) v = 'places';
+  if (v !== 'admin') permEditing = false;   // leaving the page drops unsaved permission changes
   state.view = v;
   store.set('fsm.view', v);
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
@@ -527,6 +528,7 @@ function switchView(v) {
 async function render() {
   if (state.view === 'places') renderPlaces();
   else if (state.view === 'calendar') await renderCalendar();
+  else if (state.view === 'ranking') await renderRanking();
   else if (state.view === 'categories') renderCategories();
   else if (state.view === 'org') renderOrgPage();
   else if (state.view === 'admin') await renderAdmin();
@@ -1047,21 +1049,104 @@ $('#my-orgs').addEventListener('click', (e) => {
 // ---------------------------------------------------------------------
 // Permissions page (owner only)
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Ranking: top 10 members by events attended this month and this year
+// (counted by org_ranking(), which resets on the 1st / January 1, Japan time)
+// ---------------------------------------------------------------------
+const RANK_TOP = 10;
+const rankRow = (r, cls = '') => {
+  const medal = r.attended > 0 ? ['gold', 'silver', 'bronze'][r.place - 1] || '' : '';
+  return `<li class="rank-row ${medal} ${cls}">
+    <span class="rank-place" aria-label="${esc(t('rank.placeN', { n: r.place }))}">${r.attended > 0 ? r.place : '-'}</span>
+    ${avatar(r.display_name)}
+    <span class="rank-name">${esc(r.display_name || '?')}</span>
+    <span class="rank-count">${esc(r.attended > 0 ? t('rank.times', { n: r.attended }) : t('rank.notYet'))}</span>
+  </li>`;
+};
+// This month / This year switch; the choice is remembered on this browser
+let rankPeriod = store.get('fsm.rankPeriod') === 'year' ? 'year' : 'month';
+function showRankPeriod() {
+  $$('#view-ranking .rank-switch button').forEach((b) => {
+    const on = b.dataset.period === rankPeriod;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on);
+  });
+  $$('#view-ranking .rank-panel').forEach((p) => { p.hidden = p.dataset.period !== rankPeriod; });
+}
+$('#view-ranking .rank-switch').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-period]');
+  if (!b) return;
+  rankPeriod = b.dataset.period;
+  store.set('fsm.rankPeriod', rankPeriod);
+  showRankPeriod();
+});
+async function renderRanking() {
+  showRankPeriod();
+  const org = state.orgId;
+  const panels = $$('#view-ranking .rank-panel');
+  const now = new Date();
+  for (const panel of panels) {
+    $('.rank-period', panel).textContent = now.toLocaleDateString(i18n.locale, panel.dataset.period === 'year'
+      ? { year: 'numeric', timeZone: 'Asia/Tokyo' } : { year: 'numeric', month: 'long', timeZone: 'Asia/Tokyo' });
+    const list = $('.rank-list', panel);
+    if (!list.children.length) list.innerHTML = skeletons('row-sk', 4);
+  }
+  const results = await Promise.all(panels.map((p) => sb.rpc('org_ranking', { p_org: org, p_period: p.dataset.period })));
+  if (org !== state.orgId || state.view !== 'ranking') return;
+  panels.forEach((panel, i) => renderRankPanel(panel, results[i]));
+}
+function renderRankPanel(panel, { data, error }) {
+  const list = $('.rank-list', panel);
+  const me = $('.rank-me', panel);
+  if (error) {
+    console.error(error);
+    list.innerHTML = `<li class="empty compact">${ic('users')}<span>${esc(t('rank.error'))}</span></li>`;
+    me.hidden = true;
+    return;
+  }
+  const top = data.filter((r) => r.attended > 0).slice(0, RANK_TOP);
+  list.innerHTML = top.length
+    ? top.map((r) => rankRow(r, r.user_id === state.user.id ? 'is-me' : '')).join('')
+    : `<li class="empty compact">${ic('users')}<span>${esc(t('rank.empty'))}</span></li>`;
+  const mine = data.find((r) => r.user_id === state.user.id);
+  me.hidden = !mine;
+  if (mine) me.innerHTML = `<div class="rank-me-label">${esc(t('rank.you'))}</div><ol class="rank-list">${rankRow(mine)}</ol>`;
+}
+
+// Permissions: read-only list with Remove/Ban; "Edit" switches to a checkbox grid
+// (one column per permission) that is saved with ✔ or thrown away with ×.
+const PERMS = [['organizer', 'perm.organizer'], ['can_create', 'perm.colCreate'], ['can_join', 'perm.colJoin']];
+let permEditing = false;
+function renderPermTools() {
+  const L = (k) => esc(t(k));
+  $('#perm-tools').innerHTML = permEditing
+    ? `<button class="ghost icon" id="perm-cancel" title="${L('cancel')}" aria-label="${L('cancel')}">${ic('x')}</button>
+       <button class="primary icon" id="perm-save" title="${L('save')}" aria-label="${L('save')}">${ic('check')}</button>`
+    : `<button class="small" id="perm-edit">${ic('pencil', 'sm')}${L('edit')}</button>`;
+}
 async function renderAdmin() {
   const L = (k, v) => esc(t(k, v));
-  const perm = (m, k, label) => `<label class="checkline small"><input type="checkbox" data-perm="${k}" data-user="${m.user_id}" ${m[k] ? 'checked' : ''}> ${L(label)}</label>`;
-  $('#admin-list').innerHTML = state.members.map((m) => {
+  renderPermTools();
+  const list = $('#admin-list');
+  list.classList.toggle('editing', permEditing);
+  const who = (m) => {
     const name = m.profiles?.display_name || '?';
-    const head = `<span class="who-line">${avatar(name)}<span>${esc(name)}${memberBadges(m)}${memberNote(m)}
+    return `<span class="who-line">${avatar(name)}<span>${esc(name)}${permEditing ? '' : memberBadges(m)}${memberNote(m)}
       <span class="muted small block">${L('admin.joined', { date: fmtYmd(m.joined_at.slice(0, 10)) })}</span></span></span>`;
-    if (m.role === 'owner') return `<li>${head}</li>`;
-    return `<li>${head}
-      <span class="perms">${perm(m, 'organizer', 'perm.organizer')}${perm(m, 'can_create', 'perm.create')}${perm(m, 'can_join', 'perm.join')}</span>
+  };
+  if (permEditing) {
+    // The owner always has every permission; their boxes are shown ticked and locked
+    const box = (m, k, label) => `<span class="perm-cell"><input type="checkbox" data-perm="${k}" data-user="${m.user_id}"
+      aria-label="${L(label)}" ${m.role === 'owner' || m[k] ? 'checked' : ''} ${m.role === 'owner' ? 'disabled' : ''}></span>`;
+    list.innerHTML = `<li class="perm-head" aria-hidden="true"><span></span>${PERMS.map(([, label]) => `<span>${L(label)}</span>`).join('')}</li>`
+      + state.members.map((m) => `<li class="perm-row">${who(m)}${PERMS.map(([k, label]) => box(m, k, label)).join('')}</li>`).join('');
+  } else {
+    list.innerHTML = state.members.map((m) => m.role === 'owner' ? `<li>${who(m)}</li>` : `<li>${who(m)}
       <span class="btn-row tight">
         <button class="small" data-kick="${m.user_id}">${L('admin.kick')}</button>
         <button class="small danger" data-ban="${m.user_id}">${L('admin.ban')}</button>
-      </span></li>`;
-  }).join('');
+      </span></li>`).join('');
+  }
   $('#ban-list').innerHTML = skeletons('row-sk', 1);
   const org = state.orgId;
   const bans = check(await sb.from('org_bans').select('*').eq('org_id', org).order('banned_at', { ascending: false }));
@@ -1073,24 +1158,31 @@ async function renderAdmin() {
     || `<li class="muted">${L('admin.noBans')}</li>`;
 }
 
-$('#admin-list').addEventListener('change', async (e) => {
-  const box = e.target.closest('[data-perm]');
-  if (!box) return;
-  const m = state.members.find((x) => x.user_id === box.dataset.user);
-  const next = { organizer: m.organizer, can_create: m.can_create, can_join: m.can_join, [box.dataset.perm]: box.checked };
-  box.disabled = true;
-  try {
-    check(await sb.rpc('set_member_permissions', { p_org: state.orgId, p_user: m.user_id,
-      p_organizer: next.organizer, p_can_create: next.can_create, p_can_join: next.can_join }));
-    Object.assign(m, next);
-    toast(t('perm.saved'));
-    renderAdmin();
-  } catch (err) {
-    box.checked = !box.checked;
-    console.error(err);
-  } finally {
-    box.disabled = false;
+$('#perm-tools').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.id === 'perm-edit' || b.id === 'perm-cancel') {
+    permEditing = b.id === 'perm-edit';
+    return renderAdmin();
   }
+  // ✔: save only the members whose boxes changed
+  const changed = state.members.filter((m) => m.role !== 'owner').map((m) => {
+    const next = Object.fromEntries(PERMS.map(([k]) => [k, $(`#admin-list [data-perm="${k}"][data-user="${m.user_id}"]`).checked]));
+    return PERMS.some(([k]) => next[k] !== m[k]) ? [m, next] : null;
+  }).filter(Boolean);
+  $$('#perm-tools button').forEach((x) => { x.disabled = true; });
+  try {
+    for (const [m, next] of changed) {
+      check(await sb.rpc('set_member_permissions', { p_org: state.orgId, p_user: m.user_id,
+        p_organizer: next.organizer, p_can_create: next.can_create, p_can_join: next.can_join }));
+      Object.assign(m, next);
+    }
+    if (changed.length) toast(t('perm.saved'));
+    permEditing = false;
+  } catch (err) {
+    console.error(err);
+  }
+  renderAdmin();
 });
 $('#admin-list').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-kick], [data-ban]');
