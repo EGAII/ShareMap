@@ -94,6 +94,7 @@ function closeModal() { modal.close(); }
 modal.addEventListener('click', (e) => {
   if (e.target === modal || e.target.closest('[data-close]')) closeModal();
 });
+modal.addEventListener('close', () => showingEvent(null));
 
 // ---------------------------------------------------------------------
 // Language
@@ -124,6 +125,11 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
+
+// An event link looks like https://…/?event=ID. Remember it until the user is signed in; the
+// address keeps it so the page is still the event's link while it opens.
+const urlEvent = new URLSearchParams(location.search).get('event');
+if (urlEvent) store.set('fsm.pendingEvent', urlEvent);
 
 // An invite link looks like https://…/?join=CODE. Remember the code until the user is signed in.
 const urlJoin = new URLSearchParams(location.search).get('join');
@@ -375,7 +381,22 @@ async function boot(user) {
     if (confirm(t('onb.pending', { code: pending.toUpperCase() }))) await joinOrg(pending, false);
   }
   await loadOrgs();
-  enterOrg(state.orgId);
+  // Opened from an event link: go straight to that event, in its group's calendar
+  const shared = await sharedEvent();
+  if (shared) Object.assign(state, { orgId: shared.org_id, view: 'calendar', month: startOfMonth(new Date(shared.starts_at)) });
+  await enterOrg(state.orgId);
+  if (shared) eventDetail(shared.id);
+}
+
+async function sharedEvent() {
+  const id = Number(store.get('fsm.pendingEvent'));
+  store.set('fsm.pendingEvent', null);
+  if (!id) return null;
+  const { data } = await sb.from('events').select('id, org_id, starts_at').eq('id', id).maybeSingle();
+  if (data && state.orgs.some((o) => o.id === data.org_id)) return data;
+  history.replaceState(null, '', location.pathname);
+  toast(t('ev.linkGone'), true);
+  return null;
 }
 
 async function loadOrgs() {
@@ -1147,8 +1168,8 @@ $('#cat-manage').addEventListener('click', async (e) => {
 // Organization / members view
 // ---------------------------------------------------------------------
 const inviteLink = (code) => `${location.origin}${location.pathname}?join=${code}`;
-async function copy(text) {
-  try { await navigator.clipboard.writeText(text); toast(t('org.copied')); }
+async function copy(text, msg = t('org.copied')) {
+  try { await navigator.clipboard.writeText(text); toast(msg); }
   catch { prompt('', text); }
 }
 
@@ -1723,6 +1744,33 @@ function googleCalendarUrl(ev, place) {
   return 'https://calendar.google.com/calendar/render?' + p.toString();
 }
 
+// While an event is open, the address is its link and the page title is its name and date.
+// WeChat's own share (the ··· menu in its browser) uses the page title, so the chat card shows the event.
+const eventLink = (id) => `${location.origin}${location.pathname}?event=${id}`;
+const eventTitle = (ev) => `${ev.title} · ${fmtDate(new Date(ev.starts_at))}`;
+function showingEvent(ev) {
+  history.replaceState(null, '', ev ? eventLink(ev.id) : location.pathname);
+  document.title = ev ? eventTitle(ev) : cfg.APP_TITLE || t('appTitle');
+}
+
+// Phones: the system share sheet (WeChat, LINE, …). Computers and WeChat's own browser:
+// copy the event's name, date, place and link to paste into a chat.
+async function shareEvent(ev, place) {
+  const start = new Date(ev.starts_at);
+  const text = [
+    t('ev.shareHead', { title: ev.title }),
+    `${fmtDateLong(start)} ${fmtTime(start)} – ${fmtTime(new Date(ev.ends_at))}`,
+    place && `📍 ${place.name}`,
+  ].filter(Boolean).join('\n');
+  const url = eventLink(ev.id);
+  const wechat = /MicroMessenger/i.test(navigator.userAgent);
+  if (navigator.share && !wechat && deviceKind() !== 'desktop') {
+    try { return await navigator.share({ title: eventTitle(ev), text, url }); }
+    catch (err) { if (err.name === 'AbortError') return; }
+  }
+  await copy(`${text}\n${url}`, t(wechat ? 'ev.shareWechat' : 'ev.shareCopied'));
+}
+
 function personLabel(p) {
   return p.guest_name
     ? `<span class="who-line">${avatar(p.guest_name, 'guest')}<span>${esc(p.guest_name)} <span class="muted small">${esc(t('ev.guestOf', { name: p.display_name }))}</span></span></span>`
@@ -1778,6 +1826,7 @@ function eventDetail(id) {
       ${joinBtn}
       ${!ev.cancelled && !past && canJoin() ? `<button id="ev-guest">${ic('user-plus')}${L('ev.guest')}</button>` : ''}
       ${repeating && s.active && (subscribed || canJoin()) ? `<button id="ev-sub" aria-pressed="${subscribed}">${ic(subscribed ? 'check' : 'repeat')}${L(subscribed ? 'ev.autoOn' : 'ev.autoOff')}</button>` : ''}
+      <button class="ghost" id="ev-share">${ic('share')}${L('ev.share')}</button>
       <button class="ghost" id="ev-gcal">${ic('calendar')}${L('ev.gcal')}</button>
       <button class="ghost" id="ev-history">${ic('history')}${L('log.btn')}</button>
     </div>
@@ -1798,6 +1847,7 @@ function eventDetail(id) {
         <button class="danger" id="ev-delete">${L(repeating ? 'ev.deleteSeries' : 'ev.delete')}</button>
       </div></div>` : ''}
   `);
+  showingEvent(ev);
 
   const refresh = async () => { await renderCalendar(); eventDetail(id); };
   const on = (sel, fn) => $(sel, body)?.addEventListener('click', async (e) => {
@@ -1846,6 +1896,7 @@ function eventDetail(id) {
     eventsChanged();
     await refresh();
   });
+  on('#ev-share', () => shareEvent(ev, place));
   $('#ev-gcal', body).addEventListener('click', () => window.open(googleCalendarUrl(ev, place), '_blank', 'noopener'));
   on('#ev-edit', async () => seriesEdit(s, ev));
   on('#ev-delete', async () => {

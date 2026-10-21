@@ -30,6 +30,10 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   - **People limit**: people can still join after it's full. They go on the **waiting list**, which everyone
     can see, and move up automatically when someone leaves.
   - Bring a guest, cancel a single date, edit or stop a series, add to Google Calendar.
+  - **Share**: an event's *Share* button opens the phone's share sheet (WeChat, LINE, …), or on a computer copies
+    the event's name, date, place and link. The link opens that event (after signing in, for members of its group).
+    While an event is open the page title is its name and date, so sharing it from WeChat's own browser
+    (the ··· menu) makes a chat card titled with the event.
   - Anyone can create an event; only the person who created it can edit, cancel or delete it.
     Each event shows when and by whom it was created.
   - **History**: every event has a *History* button showing who signed up and when, and every
