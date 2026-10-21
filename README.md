@@ -31,9 +31,13 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
     can see, and move up automatically when someone leaves.
   - Bring a guest, cancel a single date, edit or stop a series, add to Google Calendar.
   - **Share**: an event's *Share* button opens the phone's share sheet (WeChat, LINE, …), or on a computer copies
-    the event's name, date, place and link. The link opens that event (after signing in, for members of its group).
-    While an event is open the page title is its name and date, so sharing it from WeChat's own browser
-    (the ··· menu) makes a chat card titled with the event.
+    an invitation, time, place and link. The invitation reads *"Tom invites you to attend Mon, Nov 30 Badminton"*
+    (the sharer's name, the date and the event). Someone opening the link sees it on the sign-in page, signs in or taps
+    *Guest*, and lands on the event. The link carries the group's invite code, so people not in the group yet join it
+    on the way (members just open the event). Like the invite link, anyone it is forwarded to can join; making a new
+    invite code stops that (members can still open it).
+    While an event is open the page title is that invitation (with your name), so sharing it from WeChat's own
+    browser (the ··· menu) makes a chat card titled with it.
   - Anyone can create an event; only the person who created it can edit, cancel or delete it.
     Each event shows when and by whom it was created.
   - **History**: every event has a *History* button showing who signed up and when, and every

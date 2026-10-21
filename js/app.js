@@ -29,6 +29,9 @@ const fmtTime = (d) => d.toLocaleTimeString(i18n.locale, { hour: '2-digit', minu
 const fmtDate = (d) => d.toLocaleDateString(i18n.locale, { month: 'short', day: 'numeric', weekday: 'short' });
 const fmtDateLong = (d) => d.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 const fmtYmd = (s) => new Date(s + 'T00:00').toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
+// The title of a shared event link, e.g. "Tom invites you to attend Mon, Nov 30 Badminton"
+const inviteTitle = (name, at, title) =>
+  t('ev.inviteTitle', { name, title, date: isNaN(at) ? '' : fmtDate(at) }).replace(/\s+/g, ' ').trim();
 
 function safeUrl(u) {
   try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.href : '#'; } catch { return '#'; }
@@ -104,6 +107,14 @@ function applyLanguage() {
   const title = cfg.APP_TITLE || t('appTitle');
   document.title = title;
   $$('.app-title').forEach((el) => { el.textContent = title; });
+  // Opened from an event link: the invitation is the page title and sits above the sign-in form
+  $('#auth-invite').hidden = !linkInvite;
+  if (linkInvite) {
+    const invite = inviteTitle(linkInvite.name, linkInvite.at, linkInvite.title);
+    if (!state.user) document.title = invite;
+    $('#auth-invite').innerHTML = `${ic('calendar')}<div><strong>${esc(invite)}</strong>
+      <span class="muted small">${esc(t('ev.inviteHint'))}</span></div>`;
+  }
   $('#setup-body').innerHTML = t('setup.body');
   setAuthMode(authMode);
   if (state.profile) { renderOrgSelect(); renderGuestBanner(); }
@@ -126,17 +137,19 @@ const store = {
   set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
-// An event link looks like https://…/?event=ID. Remember it until the user is signed in; the
-// address keeps it so the page is still the event's link while it opens.
-const urlEvent = new URLSearchParams(location.search).get('event');
+// Links are remembered until the user is signed in. An invite link looks like https://…/?join=CODE.
+// An event link is …/?event=ID&join=CODE&by=NAME&title=TITLE&at=START: who shared it and the event's
+// name and start (seconds) are shown on the sign-in page, since the event itself can only be read
+// by members. Its address is kept, so the page is still the event's link while it opens.
+const urlParams = new URLSearchParams(location.search);
+const urlEvent = urlParams.get('event');
+const urlJoin = urlParams.get('join');
 if (urlEvent) store.set('fsm.pendingEvent', urlEvent);
-
-// An invite link looks like https://…/?join=CODE. Remember the code until the user is signed in.
-const urlJoin = new URLSearchParams(location.search).get('join');
-if (urlJoin) {
-  store.set('fsm.pendingJoin', urlJoin);
-  history.replaceState(null, '', location.pathname);
-}
+if (urlJoin) store.set('fsm.pendingJoin', urlJoin);
+if (urlJoin && !urlEvent) history.replaceState(null, '', location.pathname);
+const linkInvite = urlEvent && urlParams.get('title')
+  ? { name: urlParams.get('by') || '', title: urlParams.get('title'), at: new Date(Number(urlParams.get('at')) * 1000) }
+  : null;
 
 const state = {
   user: null,
@@ -375,28 +388,43 @@ async function boot(user) {
   $('#topbar').hidden = false;
   $('#password-card').hidden = isGuest();
 
-  const pending = store.get('fsm.pendingJoin');
-  if (pending) {
-    store.set('fsm.pendingJoin', null);
-    if (confirm(t('onb.pending', { code: pending.toUpperCase() }))) await joinOrg(pending, false);
-  }
   await loadOrgs();
   // Opened from an event link: go straight to that event, in its group's calendar
-  const shared = await sharedEvent();
+  const shared = await linkedEvent();
   if (shared) Object.assign(state, { orgId: shared.org_id, view: 'calendar', month: startOfMonth(new Date(shared.starts_at)) });
   await enterOrg(state.orgId);
   if (shared) eventDetail(shared.id);
 }
 
-async function sharedEvent() {
+// Invite and event links opened before signing in. An event link is an invitation and carries its
+// group's invite code: people not in the group yet join it without a question and land on the event.
+// A plain invite link asks first. Nobody is asked to join a group they're already in.
+const inviteCode = (code) => String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');   // as join_organization() reads it
+async function linkedEvent() {
+  const code = inviteCode(store.get('fsm.pendingJoin'));
   const id = Number(store.get('fsm.pendingEvent'));
+  store.set('fsm.pendingJoin', null);
   store.set('fsm.pendingEvent', null);
-  if (!id) return null;
+  let ev = id ? await findEvent(id) : null;
+  const mine = code && state.orgs.find((o) => o.invite_code === code);
+  if (mine) state.orgId = mine.id;
+  let joinFailed = false;
+  if (code && !ev && !mine && (id || confirm(t('onb.pending', { code })))) {
+    try {
+      await joinOrg(code, false);
+      await loadOrgs();
+      if (id) ev = await findEvent(id);
+    } catch { joinFailed = true; }   // joinOrg has shown why
+  }
+  if (id && !ev) {
+    showingEvent(null);
+    if (!joinFailed) toast(t('ev.linkGone'), true);
+  }
+  return ev;
+}
+async function findEvent(id) {
   const { data } = await sb.from('events').select('id, org_id, starts_at').eq('id', id).maybeSingle();
-  if (data && state.orgs.some((o) => o.id === data.org_id)) return data;
-  history.replaceState(null, '', location.pathname);
-  toast(t('ev.linkGone'), true);
-  return null;
+  return data && state.orgs.some((o) => o.id === data.org_id) ? data : null;
 }
 
 async function loadOrgs() {
@@ -1744,25 +1772,35 @@ function googleCalendarUrl(ev, place) {
   return 'https://calendar.google.com/calendar/render?' + p.toString();
 }
 
-// While an event is open, the address is its link and the page title is its name and date.
-// WeChat's own share (the ··· menu in its browser) uses the page title, so the chat card shows the event.
-const eventLink = (id) => `${location.origin}${location.pathname}?event=${id}`;
-const eventTitle = (ev) => `${ev.title} · ${fmtDate(new Date(ev.starts_at))}`;
+// While an event is open, the address is its link and the page title is the invitation
+// ("<my name> invites you to attend <date> <event>"). WeChat's own share (the ··· menu in its
+// browser) uses the page title, so the chat card reads as an invitation from whoever shares it.
+// The link carries the group's invite code, so people not in the group yet can join and see the event.
+function eventLink(ev) {
+  const p = new URLSearchParams({ event: ev.id });
+  const code = state.orgs.find((o) => o.id === ev.org_id)?.invite_code;
+  if (code) p.set('join', code);
+  p.set('by', state.profile.display_name);
+  p.set('title', ev.title);
+  p.set('at', Math.round(new Date(ev.starts_at) / 1000));
+  return `${location.origin}${location.pathname}?${p}`;
+}
+const eventTitle = (ev) => inviteTitle(state.profile.display_name, new Date(ev.starts_at), ev.title);
 function showingEvent(ev) {
-  history.replaceState(null, '', ev ? eventLink(ev.id) : location.pathname);
+  history.replaceState(null, '', ev ? eventLink(ev) : location.pathname);
   document.title = ev ? eventTitle(ev) : cfg.APP_TITLE || t('appTitle');
 }
 
 // Phones: the system share sheet (WeChat, LINE, …). Computers and WeChat's own browser:
-// copy the event's name, date, place and link to paste into a chat.
+// copy the invitation, time, place and link to paste into a chat.
 async function shareEvent(ev, place) {
   const start = new Date(ev.starts_at);
   const text = [
-    t('ev.shareHead', { title: ev.title }),
+    eventTitle(ev),
     `${fmtDateLong(start)} ${fmtTime(start)} – ${fmtTime(new Date(ev.ends_at))}`,
     place && `📍 ${place.name}`,
   ].filter(Boolean).join('\n');
-  const url = eventLink(ev.id);
+  const url = eventLink(ev);
   const wechat = /MicroMessenger/i.test(navigator.userAgent);
   if (navigator.share && !wechat && deviceKind() !== 'desktop') {
     try { return await navigator.share({ title: eventTitle(ev), text, url }); }

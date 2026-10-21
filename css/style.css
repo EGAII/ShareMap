@@ -212,6 +212,11 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
 .seg button { border: 0; background: transparent; color: var(--muted); padding: .5rem; border-radius: 7px; }
 .seg button:hover { background: transparent; color: var(--text); }
 .seg button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
+/* Opened from a shared event link: who invites you, to what */
+.auth-invite { display: flex; align-items: flex-start; gap: .6rem; margin: .25rem 0 .75rem; padding: .75rem .9rem;
+               background: var(--accent-soft); color: var(--accent-ink); border-radius: var(--r-md); }
+.auth-invite .ic { margin-top: .15rem; }
+.auth-invite strong { display: block; margin-bottom: .15rem; }
 .auth-form { display: flex; flex-direction: column; }
 .auth-form .field { margin-bottom: .85rem; }
 .auth-form #auth-submit { margin-top: .25rem; padding: .7rem; }
