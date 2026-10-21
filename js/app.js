@@ -107,13 +107,11 @@ function applyLanguage() {
   const title = cfg.APP_TITLE || t('appTitle');
   document.title = title;
   $$('.app-title').forEach((el) => { el.textContent = title; });
-  // Opened from an event link: the invitation is the page title and sits above the sign-in form
-  $('#auth-invite').hidden = !linkInvite;
-  if (linkInvite) {
-    const invite = inviteTitle(linkInvite.name, linkInvite.at, linkInvite.title);
-    if (!state.user) document.title = invite;
-    $('#auth-invite').innerHTML = `${ic('calendar')}<div><strong>${esc(invite)}</strong>
-      ${linkInvite.group ? `<span class="small">${esc(t('ev.inviteGroup', { group: linkInvite.group }))}</span>` : ''}
+  // Opened from an event link: say so above the sign-in form (the event itself is only readable by members)
+  $('#auth-invite').hidden = !urlEvent;
+  if (urlEvent) {
+    if (!state.user) document.title = t('ev.invited');
+    $('#auth-invite').innerHTML = `${ic('calendar')}<div><strong>${esc(t('ev.invited'))}</strong>
       <span class="muted small">${esc(t('ev.inviteHint'))}</span></div>`;
   }
   $('#setup-body').innerHTML = t('setup.body');
@@ -138,21 +136,15 @@ const store = {
   set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
-// Links are remembered until the user is signed in. An invite link looks like https://…/?join=CODE.
-// An event link is …/?join=CODE&event=ID&group=NAME&by=NAME&title=TITLE&at=START: the group's invite
-// code first, then the event. The group, who shared it, and the event's name and start (seconds) are
-// shown on the sign-in page, since the event itself can only be read by members. Its address is
-// kept, so the page is still the event's link while it opens.
+// Links are remembered until the user is signed in. An invite link looks like https://…/?join=CODE,
+// an event link like …/?join=CODE&event=ID (the group's invite code, then the event). An event
+// link's address is kept, so the page is still the event's link while it opens.
 const urlParams = new URLSearchParams(location.search);
 const urlEvent = urlParams.get('event');
 const urlJoin = urlParams.get('join');
 if (urlEvent) store.set('fsm.pendingEvent', urlEvent);
 if (urlJoin) store.set('fsm.pendingJoin', urlJoin);
 if (urlJoin && !urlEvent) history.replaceState(null, '', location.pathname);
-const linkInvite = urlEvent && urlParams.get('title')
-  ? { name: urlParams.get('by') || '', title: urlParams.get('title'), group: urlParams.get('group') || '',
-      at: new Date(Number(urlParams.get('at')) * 1000) }
-  : null;
 
 const state = {
   user: null,
@@ -1784,16 +1776,11 @@ function googleCalendarUrl(ev, place) {
 // ("<my name> invites you to attend <date> <event>"). WeChat's own share (the ··· menu in its
 // browser) uses the page title, so the chat card reads as an invitation from whoever shares it.
 // The link starts with the group's invite code, so people not in the group yet join it and see the event.
+// It is only letters and numbers, so chat apps show it short and tappable: names in Chinese or Japanese
+// would turn into long %E7%BE%BD… codes that WeChat shows as a block of text instead of a link.
 function eventLink(ev) {
-  const org = state.orgs.find((o) => o.id === ev.org_id);
-  const p = new URLSearchParams();
-  if (org) p.set('join', org.invite_code);
-  p.set('event', ev.id);
-  if (org) p.set('group', org.name);
-  p.set('by', state.profile.display_name);
-  p.set('title', ev.title);
-  p.set('at', Math.round(new Date(ev.starts_at) / 1000));
-  return `${location.origin}${location.pathname}?${p}`;
+  const code = state.orgs.find((o) => o.id === ev.org_id)?.invite_code;
+  return `${location.origin}${location.pathname}?${code ? `join=${code}&` : ''}event=${ev.id}`;
 }
 const eventTitle = (ev) => inviteTitle(state.profile.display_name, new Date(ev.starts_at), ev.title);
 function showingEvent(ev) {

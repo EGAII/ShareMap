@@ -34,8 +34,9 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
     one plain text, which pastes into WeChat, LINE or any chat as one message with a tappable link. On phones,
     *Send the link with an app* opens the share sheet with the link alone (sending text and link together arrives
     in WeChat as a message plus a file). The invitation reads *"Tom invites you to attend Mon, Nov 30 Badminton"*
-    (the sharer's name, the date and the event). Someone opening the link sees it, and the group's name, on the
-    sign-in page, signs in or taps *Guest*, and lands on the event. The link starts with the group's invite code, so
+    (the sharer's name, the date and the event). The link itself is short, letters and numbers only
+    (`…/?join=CODE&event=ID`), so chats show it as a tappable link. Someone opening it is told on the sign-in page
+    that they are invited, signs in or taps *Guest*, and lands on the event. The invite code in the link means
     people not in the group yet join it on the way (members just open the event). Like the invite link, anyone it is
     forwarded to can join; making a new invite code stops that (members can still open it). Links shared before v23
     have no invite code and can't add anyone: share the event again.
