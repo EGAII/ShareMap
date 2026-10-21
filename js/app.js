@@ -1789,8 +1789,8 @@ function showingEvent(ev) {
 }
 
 // Share panel. Each way out sends ONE item: two (text + link) arrive in WeChat as a message plus a
-// file. "Copy" puts just the event's name and its link in one short plain text, so it pastes as a
-// short message with a tappable link; the phone's share sheet gets the link alone (titled with the invitation).
+// file. "Copy" puts the invitation, time, place and link in one plain text, which pastes as one
+// message with a tappable link; the phone's share sheet gets the link alone (titled with the invitation).
 function shareEvent(ev) {
   const url = eventLink(ev);
   const wechat = /MicroMessenger/i.test(navigator.userAgent);
@@ -1800,7 +1800,14 @@ function shareEvent(ev) {
     store.set('fsm.reopenShare', '1');
     return location.replace(url);
   }
-  const text = `${ev.title}\n${url}`;
+  const place = state.places.find((p) => p.id === ev.place_id);
+  const start = new Date(ev.starts_at);
+  const text = [
+    eventTitle(ev),
+    `${fmtDateLong(start)} ${fmtTime(start)} – ${fmtTime(new Date(ev.ends_at))}`,
+    place && `📍 ${place.name}`,
+    url,
+  ].filter(Boolean).join('\n');
   const apps = navigator.share && !wechat && deviceKind() !== 'desktop';
   const L = (k) => esc(t(k));
   const body = openModal(`
