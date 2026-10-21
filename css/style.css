@@ -219,6 +219,10 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
 .auth-invite strong, .auth-invite span { display: block; }
 .auth-invite strong { margin-bottom: .15rem; }
 .auth-form { display: flex; flex-direction: column; }
+/* Share panel: the invitation exactly as it will be copied */
+.share-preview { margin: .25rem 0 0; padding: .75rem .9rem; background: var(--surface-2); border-radius: var(--r-md);
+                 font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.share-note { margin: .75rem 0 0; }
 .auth-form .field { margin-bottom: .85rem; }
 .auth-form #auth-submit { margin-top: .25rem; padding: .7rem; }
 .auth-form #auth-forgot { align-self: center; margin-top: .9rem; font-size: .88rem; }

@@ -398,8 +398,9 @@ async function boot(user) {
   await enterOrg(state.orgId);
   if (shared) eventDetail(shared.id);
   // Back from the Share button's reload in WeChat (see shareEvent): ··· now sends this event's link
-  if (shared && store.get('fsm.shareHint')) toast(t('ev.shareWechat'));
-  store.set('fsm.shareHint', null);
+  const reopen = shared && store.get('fsm.reopenShare') && state.events.find((e) => e.id === shared.id);
+  store.set('fsm.reopenShare', null);
+  if (reopen) shareEvent(reopen);
 }
 
 // Invite and event links opened before signing in. An event link is an invitation and carries its
@@ -1800,28 +1801,43 @@ function showingEvent(ev) {
   document.title = ev ? eventTitle(ev) : cfg.APP_TITLE || t('appTitle');
 }
 
-// Phones: the system share sheet (WeChat, LINE, …). Computers and WeChat's own browser:
-// copy the invitation, time, place and link to paste into a chat.
-async function shareEvent(ev, place) {
+// Share panel. Each way out sends ONE item: two (text + link) arrive in WeChat as a message plus a
+// file. "Copy" puts the invitation, time, place and link in one plain text, which pastes as one
+// message with a tappable link; the phone's share sheet gets the link alone (titled with the invitation).
+function shareEvent(ev) {
+  const url = eventLink(ev);
+  const wechat = /MicroMessenger/i.test(navigator.userAgent);
+  // WeChat's ··· menu (on iPhone at least) shares the address the page was opened with, not the one
+  // it shows now. Reopen the page on this event's link first so ··· sends it; boot() reopens this panel.
+  if (wechat && ![...new URL(url).searchParams].every(([k, v]) => urlParams.get(k) === v)) {
+    store.set('fsm.reopenShare', '1');
+    return location.replace(url);
+  }
+  const place = state.places.find((p) => p.id === ev.place_id);
   const start = new Date(ev.starts_at);
   const text = [
     eventTitle(ev),
     `${fmtDateLong(start)} ${fmtTime(start)} – ${fmtTime(new Date(ev.ends_at))}`,
     place && `📍 ${place.name}`,
+    url,
   ].filter(Boolean).join('\n');
-  const url = eventLink(ev);
-  const wechat = /MicroMessenger/i.test(navigator.userAgent);
-  if (navigator.share && !wechat && deviceKind() !== 'desktop') {
-    try { return await navigator.share({ title: eventTitle(ev), text, url }); }
-    catch (err) { if (err.name === 'AbortError') return; }
-  }
-  await copy(`${text}\n${url}`, t(wechat ? 'ev.shareWechat' : 'ev.shareCopied'));
-  // WeChat's ··· menu (on iPhone at least) shares the address the page was opened with, not the one
-  // it shows now. Reopen the page on this event's link so ··· sends it; boot() repeats the hint.
-  if (wechat && ![...new URL(url).searchParams].every(([k, v]) => urlParams.get(k) === v)) {
-    store.set('fsm.shareHint', '1');
-    location.replace(url);
-  }
+  const apps = navigator.share && !wechat && deviceKind() !== 'desktop';
+  const L = (k) => esc(t(k));
+  const body = openModal(`
+    <div class="modal-head"><h2>${L('ev.shareTitle')}</h2>${closeBtn()}</div>
+    <div class="share-preview">${esc(text)}</div>
+    <div class="btn-row">
+      <button class="primary" id="share-copy">${ic('copy')}${L('ev.shareCopy')}</button>
+      ${apps ? `<button id="share-apps">${ic('share')}${L('ev.shareApps')}</button>` : ''}
+    </div>
+    <p class="muted small share-note">${L(wechat ? 'ev.shareWechat' : 'ev.shareNote')}</p>
+    <div class="modal-foot"><button type="button" id="share-back">${L('back')}</button></div>`);
+  $('#share-back', body).addEventListener('click', () => eventDetail(ev.id));
+  $('#share-copy', body).addEventListener('click', () => copy(text, t('ev.shareCopied')));
+  $('#share-apps', body)?.addEventListener('click', async () => {
+    try { await navigator.share({ title: eventTitle(ev), url }); }
+    catch (err) { if (err.name !== 'AbortError') copy(text, t('ev.shareCopied')); }
+  });
 }
 
 function personLabel(p) {
@@ -1949,7 +1965,7 @@ function eventDetail(id) {
     eventsChanged();
     await refresh();
   });
-  on('#ev-share', () => shareEvent(ev, place));
+  $('#ev-share', body).addEventListener('click', () => shareEvent(ev));
   $('#ev-gcal', body).addEventListener('click', () => window.open(googleCalendarUrl(ev, place), '_blank', 'noopener'));
   on('#ev-edit', async () => seriesEdit(s, ev));
   on('#ev-delete', async () => {

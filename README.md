@@ -30,8 +30,10 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   - **People limit**: people can still join after it's full. They go on the **waiting list**, which everyone
     can see, and move up automatically when someone leaves.
   - Bring a guest, cancel a single date, edit or stop a series, add to Google Calendar.
-  - **Share**: an event's *Share* button opens the phone's share sheet (WeChat, LINE, …), or on a computer copies
-    an invitation, time, place and link. The invitation reads *"Tom invites you to attend Mon, Nov 30 Badminton"*
+  - **Share**: an event's *Share* button shows the invitation, time, place and link. *Copy invitation* copies it as
+    one plain text, which pastes into WeChat, LINE or any chat as one message with a tappable link. On phones,
+    *Send the link with an app* opens the share sheet with the link alone (sending text and link together arrives
+    in WeChat as a message plus a file). The invitation reads *"Tom invites you to attend Mon, Nov 30 Badminton"*
     (the sharer's name, the date and the event). Someone opening the link sees it, and the group's name, on the
     sign-in page, signs in or taps *Guest*, and lands on the event. The link starts with the group's invite code, so
     people not in the group yet join it on the way (members just open the event). Like the invite link, anyone it is
