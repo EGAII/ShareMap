@@ -113,6 +113,7 @@ function applyLanguage() {
     const invite = inviteTitle(linkInvite.name, linkInvite.at, linkInvite.title);
     if (!state.user) document.title = invite;
     $('#auth-invite').innerHTML = `${ic('calendar')}<div><strong>${esc(invite)}</strong>
+      ${linkInvite.group ? `<span class="small">${esc(t('ev.inviteGroup', { group: linkInvite.group }))}</span>` : ''}
       <span class="muted small">${esc(t('ev.inviteHint'))}</span></div>`;
   }
   $('#setup-body').innerHTML = t('setup.body');
@@ -138,9 +139,10 @@ const store = {
 };
 
 // Links are remembered until the user is signed in. An invite link looks like https://…/?join=CODE.
-// An event link is …/?event=ID&join=CODE&by=NAME&title=TITLE&at=START: who shared it and the event's
-// name and start (seconds) are shown on the sign-in page, since the event itself can only be read
-// by members. Its address is kept, so the page is still the event's link while it opens.
+// An event link is …/?join=CODE&event=ID&group=NAME&by=NAME&title=TITLE&at=START: the group's invite
+// code first, then the event. The group, who shared it, and the event's name and start (seconds) are
+// shown on the sign-in page, since the event itself can only be read by members. Its address is
+// kept, so the page is still the event's link while it opens.
 const urlParams = new URLSearchParams(location.search);
 const urlEvent = urlParams.get('event');
 const urlJoin = urlParams.get('join');
@@ -148,7 +150,8 @@ if (urlEvent) store.set('fsm.pendingEvent', urlEvent);
 if (urlJoin) store.set('fsm.pendingJoin', urlJoin);
 if (urlJoin && !urlEvent) history.replaceState(null, '', location.pathname);
 const linkInvite = urlEvent && urlParams.get('title')
-  ? { name: urlParams.get('by') || '', title: urlParams.get('title'), at: new Date(Number(urlParams.get('at')) * 1000) }
+  ? { name: urlParams.get('by') || '', title: urlParams.get('title'), group: urlParams.get('group') || '',
+      at: new Date(Number(urlParams.get('at')) * 1000) }
   : null;
 
 const state = {
@@ -394,6 +397,9 @@ async function boot(user) {
   if (shared) Object.assign(state, { orgId: shared.org_id, view: 'calendar', month: startOfMonth(new Date(shared.starts_at)) });
   await enterOrg(state.orgId);
   if (shared) eventDetail(shared.id);
+  // Back from the Share button's reload in WeChat (see shareEvent): ··· now sends this event's link
+  if (shared && store.get('fsm.shareHint')) toast(t('ev.shareWechat'));
+  store.set('fsm.shareHint', null);
 }
 
 // Invite and event links opened before signing in. An event link is an invitation and carries its
@@ -418,7 +424,8 @@ async function linkedEvent() {
   }
   if (id && !ev) {
     showingEvent(null);
-    if (!joinFailed) toast(t('ev.linkGone'), true);
+    // Links made before they carried the invite code can't add anyone to the group
+    if (!joinFailed) toast(t(code ? 'ev.linkGone' : 'ev.linkNoGroup'), true);
   }
   return ev;
 }
@@ -1775,11 +1782,13 @@ function googleCalendarUrl(ev, place) {
 // While an event is open, the address is its link and the page title is the invitation
 // ("<my name> invites you to attend <date> <event>"). WeChat's own share (the ··· menu in its
 // browser) uses the page title, so the chat card reads as an invitation from whoever shares it.
-// The link carries the group's invite code, so people not in the group yet can join and see the event.
+// The link starts with the group's invite code, so people not in the group yet join it and see the event.
 function eventLink(ev) {
-  const p = new URLSearchParams({ event: ev.id });
-  const code = state.orgs.find((o) => o.id === ev.org_id)?.invite_code;
-  if (code) p.set('join', code);
+  const org = state.orgs.find((o) => o.id === ev.org_id);
+  const p = new URLSearchParams();
+  if (org) p.set('join', org.invite_code);
+  p.set('event', ev.id);
+  if (org) p.set('group', org.name);
   p.set('by', state.profile.display_name);
   p.set('title', ev.title);
   p.set('at', Math.round(new Date(ev.starts_at) / 1000));
@@ -1807,6 +1816,12 @@ async function shareEvent(ev, place) {
     catch (err) { if (err.name === 'AbortError') return; }
   }
   await copy(`${text}\n${url}`, t(wechat ? 'ev.shareWechat' : 'ev.shareCopied'));
+  // WeChat's ··· menu (on iPhone at least) shares the address the page was opened with, not the one
+  // it shows now. Reopen the page on this event's link so ··· sends it; boot() repeats the hint.
+  if (wechat && ![...new URL(url).searchParams].every(([k, v]) => urlParams.get(k) === v)) {
+    store.set('fsm.shareHint', '1');
+    location.replace(url);
+  }
 }
 
 function personLabel(p) {

@@ -216,7 +216,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
 .auth-invite { display: flex; align-items: flex-start; gap: .6rem; margin: .25rem 0 .75rem; padding: .75rem .9rem;
                background: var(--accent-soft); color: var(--accent-ink); border-radius: var(--r-md); }
 .auth-invite .ic { margin-top: .15rem; }
-.auth-invite strong { display: block; margin-bottom: .15rem; }
+.auth-invite strong, .auth-invite span { display: block; }
+.auth-invite strong { margin-bottom: .15rem; }
 .auth-form { display: flex; flex-direction: column; }
 .auth-form .field { margin-bottom: .85rem; }
 .auth-form #auth-submit { margin-top: .25rem; padding: .7rem; }
