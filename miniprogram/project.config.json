@@ -1,0 +1,27 @@
+{
+  "description": "ShareMap WeChat mini program. Replace appid with your mini program's AppID (WeChat DevTools asks for it when importing).",
+  "appid": "touristappid",
+  "projectname": "ShareMap",
+  "compileType": "miniprogram",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "libVersion": "3.3.4",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false,
+    "ignoreUploadUnusedFiles": true,
+    "showShadowRootInWxmlPanel": true
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "tools" },
+      { "type": "folder", "value": "test" },
+      { "type": "folder", "value": "cloudfunctions" }
+    ],
+    "include": []
+  },
+  "condition": {},
+  "editorSetting": { "tabIndent": "insertSpaces", "tabSize": 2 }
+}

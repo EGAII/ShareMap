@@ -1,0 +1,7 @@
+{
+  "name": "supabase",
+  "version": "1.0.0",
+  "description": "Forwards the ShareMap mini program's requests to Supabase (no dependencies)",
+  "main": "index.js",
+  "private": true
+}

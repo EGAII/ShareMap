@@ -1,0 +1,80 @@
+// Text for the mini program: the 简体中文 strings of the website (js/i18n.js, same keys),
+// plus a few of its own (mp.*). Same t(key, { vars }) as the website.
+const DICT = {
+  appTitle: 'ShareMap',
+  'nav.places': '地点', 'nav.calendar': '活动', 'nav.org': '成员',
+  'org.label': '群组', 'org.createJoin': '创建或加入…', 'org.banned': '你已被该群组封禁。',
+  'onb.joinTitle': '用邀请码加入', 'onb.codePh': '邀请码（例如 8K3ZZFFP）', 'onb.join': '加入',
+  'onb.joined': '已加入“{name}”。', 'onb.pending': '要用邀请码 {code} 加入吗？',
+  'org.invite': '邀请成员', 'org.copyCode': '复制邀请码', 'org.copied': '已复制',
+  'org.members': '成员（{n} 人）', 'org.owner': '管理员', 'org.mine': '我的群组', 'org.current': '当前',
+  'perm.organizer': '活动发起人', 'perm.noCreate': '禁止发起', 'perm.noJoin': '禁止报名',
+  'guest.badge': '游客',
+  'fam.profile': '我的资料', 'fam.displayName': '显示名称', 'fam.you': '（你）',
+  add: '添加', cancel: '取消', save: '保存', saved: '已保存', remove: '移除', back: '返回', edit: '编辑',
+  listSep: '、',
+
+  'places.search': '搜索地点…', 'places.all': '全部地点', 'places.none': '未分类', 'places.empty': '这里没有地点。',
+  'places.emptyTitle': '开始建立地图', 'places.direct': '“{name}”的其他地点', 'places.results': '搜索结果',
+  'places.mapCredit': '地图：', 'places.addedBy': '由 {name} 添加', 'cats.placesCount': '{n} 个地点',
+  'cover.next': '下次：{title}', 'cover.none': '暂无计划',
+
+  'cal.today': '今天', 'cal.upcoming': '近期活动（30 天内）', 'cal.more': '还有 {n} 个', 'cal.noUpcoming': '近期没有活动。',
+  'up.step1': '点活动可查看详情和报名名单', 'up.step2': '打开活动后点「报名」即可参加；满员会自动排候补，有人退出时自动递补',
+  'up.step3': '已报名的活动会显示 ✓ 已报名', 'up.left': '剩 {n} 个名额', 'up.full': '已满员・可排候补',
+  'due.today': '今天', 'due.tomorrow': '明天', 'due.inDays': '{n} 天后', 'due.within3': '3 天内',
+  'due.withinWeek': '一周内', 'due.later': '更晚',
+
+  'rt.none': '不重复', 'rt.daily1': '每天', 'rt.dailyN': '每 {n} 天',
+  'rt.weekly1': '每周 {days}', 'rt.weeklyN': '每 {n} 周 {days}',
+  'rt.monthly1': '每月 {d} 日', 'rt.monthlyN': '每 {n} 个月 {d} 日',
+  'rt.until': '（至 {date}）', 'rt.stopped': '（已停止）',
+
+  'badge.cancelled': '已取消', 'badge.joined': '已报名', 'badge.waitlist': '候补第 {n} 位', 'count.waiting': '候补 {n} 人',
+  'ev.when': '时间', 'ev.where': '地点', 'ev.repeatLbl': '重复', 'ev.limitLbl': '人数上限', 'ev.details': '详细说明',
+  'ev.peopleN': '{n} 人', 'ev.noLimit': '不限', 'ev.going': '参加者', 'ev.nobody': '还没有人',
+  'ev.waitlist': '候补名单', 'ev.leave': '取消报名', 'ev.leaveWait': '取消候补',
+  'ev.join': '报名', 'ev.joinWait': '加入候补', 'ev.guest': '带朋友', 'ev.guestPrompt': '朋友的名字', 'ev.guestOf': '（{name} 的朋友）',
+  'ev.autoOn': '每次自动报名中', 'ev.autoOff': '每次自动报名', 'ev.autoToast': '之后的每个日期都会自动为你报名',
+  'ev.stopAutoConfirm': '要停止自动报名吗？你也会被移出该系列之后的日期。',
+  'ev.share': '分享', 'ev.inviteTitle': '{name} 邀请你参加 {date} {title}',
+  'ev.joined': '报名成功', 'ev.addedWait': '已加入候补名单',
+  'ev.createdAt': '创建时间', 'ev.createdBy': '{time}（{name}）',
+  'ev.linkGone': '无法打开这个活动。可能已被删除，或属于你尚未加入的群组。',
+  'ev.linkNoGroup': '这个链接是旧版生成的，没有包含群组信息，无法让你加入。请对方重新分享一次活动。',
+  'ban.noJoin': '管理员已限制你报名活动。',
+
+  'mp.signingIn': '正在用微信登录…',
+  'mp.loginFailed': '登录失败',
+  'mp.offline': '连不上服务器，请检查网络后重试。',
+  'mp.retry': '重试',
+  'mp.badCode': '邀请码无效，请确认后再试。',
+  'mp.noGroupTitle': '加入群组',
+  'mp.noGroupHint': '请向群组成员要邀请码，或请对方把活动分享给你。',
+  'mp.joinOther': '用邀请码加入其他群组',
+  'mp.nameTitle': '设置昵称',
+  'mp.nameHint': '群组里的人会看到这个名字。分享活动时会显示为「{name} 邀请你参加…」。',
+  'mp.namePh': '点这里可使用微信昵称',
+  'mp.nameSkip': '以后再说',
+  'mp.nameEmpty': '请填写昵称',
+  'mp.nameBad': '这个昵称无法使用，请换一个',
+  'mp.openMap': '查看位置',
+  'mp.copyLink': '复制链接',
+  'mp.linkCopied': '已复制 Google 地图链接',
+  'mp.dayEvents': '{date}的活动',
+  'mp.shareHint': '点「分享」发给微信好友或群聊。对方打开后会自动加入群组并看到这个活动。',
+  'mp.error': '出错了',
+  'mp.joinMenu': '用邀请码加入…',
+  'mp.placesEmpty': '还没有地点。群组成员可以在 ShareMap 网页版添加地点。',
+  'mp.sendInvite': '发送邀请',
+  'mp.inviteGroup': '{name} 邀请你加入“{org}”',
+  'mp.home': '回到首页',
+  'foot.by': '制作：Egaii',
+};
+
+function t(key, vars = {}) {
+  const s = DICT[key] ?? key;
+  return s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
+}
+
+module.exports = { t, DICT };

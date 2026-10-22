@@ -1,0 +1,19 @@
+<view class="main">
+  <view class="card narrow">
+    <view class="name-head">
+      <view class="avatar big">{{initial}}</view>
+      <text class="h2">{{T['mp.nameTitle']}}</text>
+    </view>
+    <text class="muted small block">{{hint}}</text>
+    <form bindsubmit="onSubmit">
+      <view class="field name-field">
+        <text class="label">{{T['fam.displayName']}}</text>
+        <input class="input" type="nickname" name="nickname" value="{{name}}" maxlength="40"
+               placeholder="{{T['mp.namePh']}}" placeholder-class="placeholder"
+               bindinput="onInput" bindnicknamereview="onReview" />
+      </view>
+      <button class="btn primary block-btn {{busy ? 'disabled' : ''}}" hover-class="hover" form-type="submit">{{T['save']}}</button>
+    </form>
+    <view wx:if="{{first}}" class="skip" hover-class="hover" bindtap="onSkip">{{T['mp.nameSkip']}}</view>
+  </view>
+</view>

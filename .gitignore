@@ -1,2 +1,4 @@
 # Supabase CLI working files
 supabase/.temp/
+# WeChat DevTools' personal settings for the mini program
+miniprogram/project.private.config.json

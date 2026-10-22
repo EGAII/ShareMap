@@ -1,0 +1,21 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/event/event",
+    "pages/name/name"
+  ],
+  "window": {
+    "navigationBarTitleText": "ShareMap",
+    "navigationBarBackgroundColor": "@navBg",
+    "navigationBarTextStyle": "@navText",
+    "backgroundColor": "@bg",
+    "backgroundTextStyle": "@bgText",
+    "backgroundColorTop": "@bg",
+    "backgroundColorBottom": "@bg"
+  },
+  "darkmode": true,
+  "themeLocation": "theme.json",
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

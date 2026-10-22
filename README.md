@@ -66,6 +66,8 @@ get-togethers at them. It's a static site hosted free on **GitHub Pages**, with 
   with gold, silver and bronze for 1st to 3rd and ties sharing a place. Your own place is shown below the list.
 - **How soon an event is**: upcoming event cards and calendar chips are colored by when they start: red today, orange tomorrow,
   yellow within 3 days, blue within a week, and plain after that (a legend is under the calendar). Past events are gray.
+- **WeChat mini program** (optional, see [below](#wechat-mini-program)): the same groups, places and events inside WeChat,
+  signed in with WeChat instead of an email and password.
 
 ## Setup (about 15 minutes)
 
@@ -141,6 +143,102 @@ same-named place elsewhere. If a card looks wrong, edit the place and paste the 
 ### 6. Start using it
 
 Sign in, create your organization, then open the **Members** tab and share the invite code or link.
+
+## WeChat mini program
+
+[`miniprogram/`](miniprogram) is a WeChat mini program on the same Supabase project: same tables, Row Level Security
+and RPCs, so a group, its places and its events are the same on the website and in WeChat. It looks like the website
+(the same colors, cards, chips, calendar and event page, in light and dark mode) and is in 简体中文.
+
+- **Signing in**: opening the mini program signs people in with their WeChat identity. There is no email, password,
+  sign-up screen or *Guest* option. The first time, they're asked for a nickname (the box offers their WeChat
+  nickname), which the group sees and which shared invitations show.
+- **What it does**: switch groups, join a group with an invite code, browse places (tap one to open it in WeChat's
+  map, or copy its Google Maps link), the events calendar and upcoming list, and an event's page, with join, leave,
+  the waiting list, bring a friend, auto-join for repeating events, and **Share**.
+- **Sharing** an event sends a chat card titled *"Tom 邀请你参加 11月30日周一 羽毛球"* that opens the event. Like the
+  website's event links, it carries the group's invite code, so people not in the group yet join it on the way. On
+  the **Members** tab, *发送邀请* shares an invitation to the group (it asks before joining, like the invite link).
+- **Use the website** to add places, create or edit events, create groups, and for categories, the ranking,
+  permissions and history.
+- **Accounts**: a WeChat account is a full member, not a guest, and is never deleted automatically. It is a different
+  ShareMap account from an email account on the website, so someone who uses both appears in the group twice.
+
+How it talks to Supabase: a released mini program may only call addresses with a Chinese ICP filing
+(**"域名必须经过 ICP 备案"**, [network docs](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)),
+and `supabase.co` has none and can't get one. So its requests go through a cloud function on WeChat Cloud Development
+(云开发), [`cloudfunctions/supabase`](miniprogram/cloudfunctions/supabase), which forwards them to Supabase: cloud
+functions aren't limited by that rule. It only reaches this Supabase project and only the paths the mini program uses,
+and adds no rights: each request carries the person's own sign-in token, so Row Level Security applies as on the website.
+
+How sign-in works: the mini program gets a one-time code from `wx.login()` and sends it (through the cloud function)
+to the [`wechat-login`](supabase/functions/wechat-login) Edge Function. That exchanges it with WeChat
+(`jscode2session`) for the person's openid, makes their ShareMap account on the first visit (its email is made up from
+the openid and ends in `.invalid`, so no mail is ever sent to it) and returns a normal Supabase session, which the
+mini program refreshes like the website does. The AppSecret and Supabase's service key stay in Supabase; the cloud
+function holds no secrets. No database changes are needed.
+
+### Setting it up (personal mini program)
+
+1. **Register** at <https://mp.weixin.qq.com> → 立即注册 → 小程序, as **个人** (personal). It needs an email address not
+   used by another WeChat account, and a WeChat account verified with a mainland China ID. Then note the **AppID** and
+   generate the **AppSecret** (开发管理 → 开发设置).
+2. **Deploy the sign-in function** (your project ref is the `xxxx` in `https://xxxx.supabase.co`):
+   ```bash
+   npx supabase secrets set WECHAT_APPID=wx0123456789abcdef WECHAT_APPSECRET=your-app-secret --project-ref <your-project-ref>
+   ```
+   ```bash
+   npx supabase functions deploy wechat-login --no-verify-jwt --project-ref <your-project-ref>
+   ```
+   `--no-verify-jwt` because callers aren't signed in yet; the function only answers a valid WeChat code.
+3. **Open the project** in [WeChat DevTools](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html):
+   *Import* the `miniprogram` folder with your AppID (or replace `touristappid` in
+   [`project.config.json`](miniprogram/project.config.json); tourist mode can't sign in).
+4. **Turn on Cloud Development**: click **云开发** in DevTools' toolbar and create an environment. It's a paid service;
+   the console shows the plans (WeChat's 2026 growth plan also gives new developers a free personal environment for
+  6 months).
+   Copy the **环境 ID** into `CLOUD_ENV` in [`miniprogram/config.js`](miniprogram/config.js).
+5. **Deploy the cloud function**: in DevTools, right-click `cloudfunctions/supabase` → **上传并部署：所有文件** (it has
+   no dependencies). Then in the Cloud Development console → 云函数 → `supabase` → configuration, set the **timeout**
+   to 20 seconds (the default 3 s is too short for a first sign-in). No request domain needs to be added: Supabase is
+   only reached through the function, and the map squares on place cards are `<image>`s, which need no entry.
+6. **Privacy declaration** (设置 → 服务内容声明 → 用户隐私保护指引): declare the **nickname** (用户信息：微信昵称) and the
+   **clipboard** (剪切板, used to copy invite codes and map links). WeChat blocks undeclared ones.
+7. **Mini program filing** (小程序备案, in the console): needed before release; it asks for the mainland ID, a mainland
+   phone number and face verification, and is reviewed before it's approved.
+8. Upload a version from DevTools, try it as the trial version (体验版), then submit it for review and release. Choose a
+   service category (服务类目) that fits; the console only offers those open to personal mini programs.
+
+To try it before registering, a test account (<https://developers.weixin.qq.com/sandbox>) gives a test AppID and
+AppSecret for steps 2–3. Test accounts have no Cloud Development, so leave `CLOUD_ENV` empty: the mini program then
+calls Supabase directly, which works in DevTools (*不校验合法域名* is already on in `project.config.json`) and on a phone
+with *开发调试* switched on (··· menu), but not in a released version.
+
+### Notes
+
+- Google Maps doesn't open inside WeChat (and is blocked in mainland China), so a place opens in WeChat's own map
+  at its coordinates. Places without coordinates copy their Google Maps link instead. WeChat's map uses China's
+  coordinate system inside mainland China, so places there can show a few hundred meters off.
+- When something fails, the error says why. *url not in domain list* means `CLOUD_ENV` is empty, so the mini program
+  called Supabase directly; *FUNCTION_NOT_FOUND* or *cloud.callFunction:fail* means the cloud function isn't deployed
+  in that environment (step 5); *TIME_LIMIT_EXCEEDED* means its timeout is still the default 3 s.
+- The cloud function runs in mainland China and Supabase doesn't, so each request takes a little longer than on the
+  website (more so from inside China).
+- Review may ask for a content check on text people type in the mini program (the only free text is a friend's name;
+  nicknames are checked by WeChat's nickname box). If it does, the cloud function is where to add WeChat's
+  `msgSecCheck`.
+- Tests (WeChat and Supabase are replaced by fakes; nothing is sent):
+  ```bash
+  npx deno test supabase/functions/wechat-login/
+  ```
+  ```bash
+  node --test "miniprogram/test/*.test.js"
+  ```
+  With `LIVE=1` the mini program tests also send every query it reads with to your Supabase project, using only the
+  anon key: Row Level Security returns no rows, but a wrong column or relation is refused. Nothing is written.
+  Behind a proxy, add `NODE_USE_ENV_PROXY=1`.
+- The icons and place-cover colors are made from `index.html` and `css/style.css`. After changing those, run
+  `node miniprogram/tools/build-styles.js`.
 
 ## Local testing
 

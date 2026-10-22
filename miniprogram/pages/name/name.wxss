@@ -1,0 +1,6 @@
+.name-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.name-head .h2 { margin: 0; }
+.avatar.big { width: 44px; height: 44px; border-radius: 12px; font-size: 18px; }
+.name-field { margin-top: 20px; }
+.skip { margin: 14px auto 0; width: fit-content; padding: 5.6px 11.2px; border-radius: var(--r-sm); color: var(--muted); font-size: 14px; }
+.skip.hover { background: var(--surface-2); color: var(--text); }

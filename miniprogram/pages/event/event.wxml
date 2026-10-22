@@ -1,0 +1,90 @@
+<!-- Event detail (the website's event dialog, as a page) -->
+<view class="main">
+  <block wx:if="{{status === 'loading'}}">
+    <view class="skeleton head-sk"></view>
+    <view class="skeleton card-sk"></view>
+    <view class="skeleton row-sk"></view>
+  </block>
+
+  <view wx:elif="{{status === 'error'}}" class="card narrow">
+    <view class="empty compact"><view class="ic i-calendar"></view><text>{{error}}</text></view>
+    <view class="btn-row">
+      <view class="btn primary" hover-class="hover" bindtap="onHome">{{T['mp.home']}}</view>
+      <view class="btn" hover-class="hover" bindtap="onRetry">{{T['mp.retry']}}</view>
+    </view>
+  </view>
+
+  <view wx:else class="card ev-card">
+    <view class="ev-head">
+      <text class="h2">{{ev.title}}</text>
+      <view wx:if="{{ev.badge}}" class="badge {{ev.badge.cls}}">{{ev.badge.text}}</view>
+    </view>
+
+    <view class="ev-meta">
+      <text class="dt">{{T['ev.when']}}</text>
+      <view class="dd num">{{ev.date}}<text class="block">{{ev.time}}</text></view>
+      <text class="dt">{{T['ev.where']}}</text>
+      <view class="dd">
+        <view wx:if="{{ev.place}}" class="place-link" hover-class="hover" bindtap="onPlace">
+          <view class="ic sm i-pin"></view><text>{{ev.place.name}}</text><view class="ic sm i-out"></view>
+        </view>
+        <text wx:else>—</text>
+      </view>
+      <text class="dt">{{T['ev.repeatLbl']}}</text>
+      <text class="dd">{{ev.repeat}}</text>
+      <text class="dt">{{T['ev.limitLbl']}}</text>
+      <text class="dd">{{ev.limit}}</text>
+      <block wx:if="{{ev.details}}">
+        <text class="dt">{{T['ev.details']}}</text>
+        <text class="dd pre" user-select>{{ev.details}}</text>
+      </block>
+      <block wx:if="{{ev.created}}">
+        <text class="dt">{{T['ev.createdAt']}}</text>
+        <text class="dd">{{ev.created}}</text>
+      </block>
+    </view>
+
+    <view class="section-title"><view class="ic sm i-users"></view><text>{{T['ev.going']}}</text><text class="count">{{ev.goingCount}}</text></view>
+    <view class="people">
+      <view wx:for="{{ev.confirmed}}" wx:key="id" class="li">
+        <text class="pos">{{item.pos}}.</text>
+        <view class="who who-line">
+          <view class="avatar {{item.guest ? 'guest' : ''}}">{{item.initial}}</view>
+          <text>{{item.name}}<text wx:if="{{item.of}}" class="muted small"> {{item.of}}</text></text>
+        </view>
+        <view wx:if="{{item.removable}}" class="btn ghost icon" hover-class="hover" data-id="{{item.id}}" bindtap="onRemove"><view class="ic sm i-x"></view></view>
+      </view>
+      <view wx:if="{{!ev.confirmed.length}}" class="none">{{T['ev.nobody']}}</view>
+    </view>
+    <block wx:if="{{ev.waitlist.length}}">
+      <view class="section-title wait"><view class="ic sm i-hourglass"></view><text>{{T['ev.waitlist']}}</text><text class="count">{{ev.waitlist.length}}</text></view>
+      <view class="people waiting">
+        <view wx:for="{{ev.waitlist}}" wx:key="id" class="li">
+          <text class="pos">{{item.pos}}.</text>
+          <view class="who who-line">
+            <view class="avatar">{{item.initial}}</view>
+            <text>{{item.name}}<text wx:if="{{item.of}}" class="muted small"> {{item.of}}</text></text>
+          </view>
+          <view wx:if="{{item.removable}}" class="btn ghost icon" hover-class="hover" data-id="{{item.id}}" bindtap="onRemove"><view class="ic sm i-x"></view></view>
+        </view>
+      </view>
+    </block>
+
+    <view class="btn-row">
+      <text wx:if="{{ev.join.kind === 'blocked'}}" class="muted small">{{ev.join.text}}</text>
+      <view wx:elif="{{ev.join.kind === 'leave'}}" class="btn {{busy ? 'disabled' : ''}}" hover-class="hover" bindtap="onLeave">{{ev.join.text}}</view>
+      <view wx:elif="{{ev.join.kind === 'join'}}" class="btn primary {{busy ? 'disabled' : ''}}" hover-class="hover" bindtap="onJoin">{{ev.join.text}}</view>
+      <view wx:if="{{ev.canGuest}}" class="btn" hover-class="hover" bindtap="onGuestToggle"><view class="ic i-user-plus"></view><text>{{T['ev.guest']}}</text></view>
+      <view wx:if="{{ev.sub}}" class="btn {{busy ? 'disabled' : ''}}" hover-class="hover" bindtap="onSub">
+        <view class="ic {{ev.sub.on ? 'i-check' : 'i-repeat'}}"></view><text>{{ev.sub.text}}</text>
+      </view>
+      <button class="btn ghost" hover-class="hover" open-type="share"><view class="ic i-share"></view><text>{{T['ev.share']}}</text></button>
+    </view>
+    <view wx:if="{{guestOpen}}" class="guest-form">
+      <input class="input" value="{{guestName}}" maxlength="40" focus placeholder="{{T['ev.guestPrompt']}}" placeholder-class="placeholder"
+             confirm-type="done" bindinput="onGuestInput" bindconfirm="onGuestAdd" />
+      <view class="btn primary {{guestName && !busy ? '' : 'disabled'}}" hover-class="hover" bindtap="onGuestAdd">{{T['add']}}</view>
+    </view>
+    <text class="muted small block share-note">{{T['mp.shareHint']}}</text>
+  </view>
+</view>

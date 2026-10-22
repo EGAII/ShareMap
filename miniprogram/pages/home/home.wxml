@@ -1,0 +1,256 @@
+<!-- Top bar: group picker, then the tabs (the website's phone top bar) -->
+<view class="topbar" wx:if="{{status === 'ready' && hasOrg}}">
+  <view class="topbar-row">
+    <view class="logo"><view class="ic i-logo-pin"></view></view>
+    <picker class="org-picker" range="{{orgNames}}" value="{{orgIndex}}" bindchange="onOrgPick">
+      <view class="org-select"><text class="org-name">{{orgName}}</text><view class="ic sm i-chevron-down"></view></view>
+    </picker>
+  </view>
+  <view class="tabs">
+    <view class="tab {{view === 'places' ? 'active' : ''}}" data-view="places" bindtap="onTab">{{T['nav.places']}}</view>
+    <view class="tab {{view === 'calendar' ? 'active' : ''}}" data-view="calendar" bindtap="onTab">{{T['nav.calendar']}}</view>
+    <view class="tab {{view === 'org' ? 'active' : ''}}" data-view="org" bindtap="onTab">{{T['nav.org']}}</view>
+  </view>
+</view>
+
+<view class="main">
+  <!-- Signing in with WeChat -->
+  <block wx:if="{{status === 'loading'}}">
+    <view class="signing muted small">{{T['mp.signingIn']}}</view>
+    <view class="skeleton card-sk"></view>
+    <view class="skeleton card-sk"></view>
+    <view class="skeleton card-sk"></view>
+  </block>
+
+  <view wx:elif="{{status === 'error'}}" class="card narrow">
+    <view class="brand-title"><view class="logo"><view class="ic i-logo-pin"></view></view><text>ShareMap</text></view>
+    <text class="h2">{{T['mp.loginFailed']}}</text>
+    <view class="form-note error">{{error}}</view>
+    <view class="btn primary block-btn" hover-class="hover" bindtap="start">{{T['mp.retry']}}</view>
+  </view>
+
+  <!-- No group yet: join with an invite code -->
+  <view wx:elif="{{!hasOrg}}" class="card narrow">
+    <view class="brand-title"><view class="logo"><view class="ic i-logo-pin"></view></view><text>ShareMap</text></view>
+    <text class="h2">{{T['mp.noGroupTitle']}}</text>
+    <text class="muted small block">{{T['mp.noGroupHint']}}</text>
+    <view class="stack onb-join">
+      <text class="h3">{{T['onb.joinTitle']}}</text>
+      <input class="input code-input" value="{{code}}" placeholder="{{T['onb.codePh']}}" placeholder-class="placeholder"
+             maxlength="20" confirm-type="go" bindinput="onCode" bindconfirm="onJoin" />
+      <view class="btn primary block-btn {{code ? '' : 'disabled'}}" hover-class="hover" bindtap="onJoin">{{T['onb.join']}}</view>
+    </view>
+  </view>
+
+  <!-- ========================================================== Places -->
+  <block wx:elif="{{view === 'places'}}">
+    <block wx:if="{{places}}">
+      <view class="crumbs">
+        <view class="crumb-trail">
+          <block wx:for="{{places.crumbs}}" wx:key="label">
+            <view wx:if="{{index > 0}}" class="ic sm i-right sep"></view>
+            <text wx:if="{{item.current}}" class="crumb current">{{item.label}}</text>
+            <text wx:else class="crumb" data-cat="{{item.key}}" bindtap="onCat">{{item.label}}</text>
+          </block>
+        </view>
+        <view wx:if="{{places.allLink}}" class="crumb-all" hover-class="hover" data-cat="all" bindtap="onCat">
+          {{T['places.all']}} <text class="count">{{places.allLink.count}}</text>
+        </view>
+      </view>
+      <view class="toolbar">
+        <view class="search">
+          <view class="ic i-search"></view>
+          <input class="input" value="{{search}}" placeholder="{{T['places.search']}}" placeholder-class="placeholder"
+                 confirm-type="search" bindinput="onSearch" />
+        </view>
+      </view>
+
+      <view wx:if="{{places.empty === 'all'}}" class="empty">
+        <view class="ic i-map"></view>
+        <text class="strong">{{T['places.emptyTitle']}}</text>
+        <text>{{T['mp.placesEmpty']}}</text>
+      </view>
+      <view wx:elif="{{places.empty}}" class="empty compact">
+        <view class="ic i-{{places.empty}}"></view><text>{{T['places.empty']}}</text>
+      </view>
+
+      <!-- Category tiles -->
+      <view wx:if="{{places.tiles.length}}" class="cat-tiles">
+        <view wx:for="{{places.tiles}}" wx:key="key" class="cat-tile cover {{item.hue}}" hover-class="hover"
+              data-cat="{{item.key}}" bindtap="onCat">
+          <image class="topo" src="{{item.art}}" mode="aspectFill"></image>
+          <view class="cover-top"><text class="cover-cat">{{item.count}}</text><view class="ic i-right go"></view></view>
+          <text class="tile-name">{{item.name}}</text>
+          <text class="tile-subs">{{item.subs}}</text>
+        </view>
+      </view>
+
+      <!-- Place cards -->
+      <block wx:for="{{places.lists}}" wx:for-item="list" wx:key="title">
+        <text wx:if="{{list.title}}" class="list-head">{{list.title}}</text>
+        <view class="place-grid {{places.tiles.length && !list.title ? 'after-tiles' : ''}}">
+          <view wx:for="{{list.places}}" wx:key="id" class="place-card" hover-class="hover" hover-stay-time="120"
+                data-id="{{item.id}}" bindtap="onPlace">
+            <view class="cover {{item.hue}} {{item.map ? 'has-map' : ''}}">
+              <view wx:if="{{item.map}}" class="osm">
+                <view class="osm-tiles" style="{{item.map.style}}">
+                  <image wx:for="{{item.map.tiles}}" wx:for-item="tile" wx:key="src" src="{{tile.src}}"
+                         style="left:{{tile.left}}px;top:{{tile.top}}px" lazy-load></image>
+                </view>
+                <view class="osm-fade"></view>
+                <view class="osm-pin"></view>
+              </view>
+              <image wx:else class="topo" src="{{item.art}}" mode="aspectFill"></image>
+              <view class="cover-top">
+                <text class="cover-cat" wx:if="{{item.cat}}">{{item.cat}}</text><text wx:else></text>
+                <view class="ic i-out go"></view>
+              </view>
+              <text class="name">{{item.name}}</text>
+              <view wx:if="{{item.next}}" class="when" hover-class="hover" data-id="{{item.next.id}}" catchtap="onOpenEvent">
+                <view class="ic sm i-calendar"></view><text>{{item.next.text}}</text>
+                <text wx:if="{{item.next.more > 0}}" class="when-more">+{{item.next.more}}</text>
+              </view>
+              <view wx:else class="when none"><view class="ic sm i-calendar"></view><text>{{T['cover.none']}}</text></view>
+            </view>
+            <text wx:if="{{item.note}}" class="note">{{item.note}}</text>
+            <text wx:if="{{item.by}}" class="added-by">{{item.by}}</text>
+            <view class="actions">
+              <view wx:if="{{item.map}}" class="btn small" hover-class="hover" data-id="{{item.id}}" catchtap="onPlace">
+                <view class="ic sm i-map"></view><text>{{T['mp.openMap']}}</text>
+              </view>
+              <view class="btn small" hover-class="hover" data-id="{{item.id}}" catchtap="onCopyLink">
+                <view class="ic sm i-link"></view><text>{{T['mp.copyLink']}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </block>
+      <view wx:if="{{places.credit}}" class="map-credit">{{T['places.mapCredit']}} © OpenStreetMap</view>
+    </block>
+    <block wx:else>
+      <view class="skeleton card-sk"></view>
+      <view class="skeleton card-sk"></view>
+    </block>
+  </block>
+
+  <!-- ========================================================== Events -->
+  <block wx:elif="{{view === 'calendar'}}">
+    <view class="toolbar cal-bar">
+      <text class="cal-title">{{calTitle}}</text>
+      <view class="btn ghost icon" hover-class="hover" bindtap="onPrev"><view class="ic i-left"></view></view>
+      <view class="btn ghost icon" hover-class="hover" bindtap="onNext"><view class="ic i-right"></view></view>
+      <view class="btn small" hover-class="hover" bindtap="onToday">{{T['cal.today']}}</view>
+    </view>
+    <view wx:if="{{cal}}" class="cal-grid">
+      <view wx:for="{{cal.heads}}" wx:key="*this" class="cal-head">{{item}}</view>
+      <view wx:for="{{cal.days}}" wx:key="key" class="cal-day {{item.cls}}" data-index="{{index}}" bindtap="onDay">
+        <text class="num">{{item.num}}</text>
+        <view wx:for="{{item.chips}}" wx:for-item="chip" wx:key="id" class="chip {{chip.cls}}"
+              data-id="{{chip.id}}" catchtap="onOpenEvent">{{chip.title}}</view>
+        <text wx:if="{{item.more}}" class="more">{{item.more}}</text>
+      </view>
+    </view>
+    <view wx:else class="skeleton cal-sk"></view>
+    <view class="due-legend">
+      <view class="lg due-today">{{T['due.today']}}</view>
+      <view class="lg due-tomorrow">{{T['due.tomorrow']}}</view>
+      <view class="lg due-3days">{{T['due.within3']}}</view>
+      <view class="lg due-week">{{T['due.withinWeek']}}</view>
+      <view class="lg due-later">{{T['due.later']}}</view>
+    </view>
+
+    <view class="section-head"><text class="h2">{{T['cal.upcoming']}}</text></view>
+    <view wx:if="{{upcoming.length}}" class="up-guide">
+      <view class="step"><text class="n">1</text><text>{{T['up.step1']}}</text></view>
+      <view class="step"><text class="n">2</text><text>{{T['up.step2']}}</text></view>
+      <view class="step"><text class="n">3</text><text>{{T['up.step3']}}</text></view>
+    </view>
+    <view wx:if="{{upcoming.length}}" class="upcoming">
+      <view wx:for="{{upcoming}}" wx:key="id" class="up-item {{item.cls}}" hover-class="hover" data-id="{{item.id}}" bindtap="onOpenEvent">
+        <view class="up-date">
+          <text wx:if="{{item.dueLabel}}" class="due-tag">{{item.dueLabel}}</text>
+          <text class="d">{{item.date}}</text>
+          <text class="muted small block">{{item.time}}</text>
+        </view>
+        <view class="up-main">
+          <text class="up-title">{{item.title}}</text>
+          <view class="up-meta">
+            <view class="m"><view class="ic sm i-pin"></view><text>{{item.place}}</text></view>
+            <view class="m"><view class="ic sm i-users"></view><text>{{item.count}}</text></view>
+            <view wx:if="{{item.waiting}}" class="m"><view class="ic sm i-hourglass"></view><text>{{item.waiting}}</text></view>
+            <text wx:if="{{item.spots}}" class="spots {{item.spots.full ? 'full' : ''}}">{{item.spots.text}}</text>
+          </view>
+          <text wx:if="{{item.desc}}" class="up-desc">{{item.desc}}</text>
+          <view wx:if="{{item.badge}}" class="up-act">
+            <view class="badge {{item.badge.cls}}"><view wx:if="{{item.badge.check}}" class="ic sm i-check"></view><text>{{item.badge.text}}</text></view>
+          </view>
+        </view>
+      </view>
+    </view>
+    <view wx:elif="{{cal}}" class="empty compact"><view class="ic i-calendar"></view><text>{{T['cal.noUpcoming']}}</text></view>
+    <view wx:else class="skeleton row-sk"></view>
+  </block>
+
+  <!-- ========================================================== Members -->
+  <block wx:else>
+    <block wx:if="{{members}}">
+      <view class="org-head"><text class="eyebrow">{{T['org.label']}}</text><text class="h1">{{members.org.name}}</text></view>
+      <view class="card invite-card">
+        <text class="h2">{{T['org.invite']}}</text>
+        <text class="invite-code" user-select>{{members.org.code}}</text>
+        <view class="btn-row">
+          <view class="btn primary" hover-class="hover" bindtap="onCopyCode"><view class="ic i-copy"></view><text>{{T['org.copyCode']}}</text></view>
+          <button class="btn" hover-class="hover" open-type="share"><view class="ic i-share"></view><text>{{T['mp.sendInvite']}}</text></button>
+        </view>
+      </view>
+
+      <view class="card">
+        <text class="h2">{{members.title}}</text>
+        <view class="plain-list">
+          <view wx:for="{{members.members}}" wx:key="id" class="li">
+            <view class="who-line">
+              <view class="avatar">{{item.initial}}</view>
+              <text>{{item.name}}<text wx:if="{{item.me}}" class="muted"> {{T['fam.you']}}</text></text>
+            </view>
+            <view wx:if="{{item.tags.length}}" class="tags">
+              <text wx:for="{{item.tags}}" wx:for-item="tag" wx:key="text" class="{{tag.cls}}">{{tag.text}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card">
+        <text class="h2">{{T['fam.profile']}}</text>
+        <view class="inline">
+          <view class="who-line grow"><view class="avatar">{{myInitial}}</view><text>{{myName}}</text></view>
+          <view class="btn small" hover-class="hover" bindtap="onEditName"><view class="ic sm i-pencil"></view><text>{{T['edit']}}</text></view>
+        </view>
+      </view>
+
+      <view class="card">
+        <text class="h2">{{T['org.mine']}}</text>
+        <view class="plain-list">
+          <view wx:for="{{members.orgs}}" wx:key="id" class="li" hover-class="{{item.current ? 'none' : 'row-hover'}}"
+                data-id="{{item.id}}" bindtap="onSwitchOrg">
+            <view class="who-line">
+              <view class="avatar">{{item.initial}}</view>
+              <text>{{item.name}}</text>
+              <text wx:if="{{item.owner}}" class="role">{{T['org.owner']}}</text>
+            </view>
+            <view wx:if="{{item.current}}" class="badge ok"><view class="ic sm i-check"></view><text>{{T['org.current']}}</text></view>
+            <view wx:else class="ic i-right faint"></view>
+          </view>
+        </view>
+        <view class="btn-row">
+          <view class="btn" hover-class="hover" bindtap="askJoin"><view class="ic i-plus"></view><text>{{T['mp.joinMenu']}}</text></view>
+        </view>
+      </view>
+    </block>
+    <block wx:else>
+      <view class="skeleton card-sk"></view>
+      <view class="skeleton row-sk"></view>
+    </block>
+  </block>
+</view>
+
+<view class="site-foot" wx:if="{{status === 'ready'}}">ShareMap · {{T['foot.by']}}</view>

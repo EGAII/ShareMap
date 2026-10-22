@@ -1,0 +1,4 @@
+{
+  "desc": "Groups are private: keep every page out of WeChat search.",
+  "rules": [{ "action": "disallow", "page": "*" }]
+}
